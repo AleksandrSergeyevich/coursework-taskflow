@@ -3,15 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TaskFlow</title>
+    <title>TaskFlow Pro — Управление задачами</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>📝 TaskFlow — Управление задачами</h1>
-        <input type="text" id="taskInput" placeholder="Введите задачу..." />
-        <button onclick="addTask()">Добавить задачу</button>
-        <ul id="taskList"></ul>
+    <div class="app-container">
+        <!-- Форма авторизации -->
+        <div id="authSection" class="auth-section">
+            <div class="auth-form">
+                <h2>TaskFlow Pro</h2>
+                <input type="text" id="username" placeholder="Имя пользователя" required>
+                <input type="password" id="password" placeholder="Пароль" required>
+                <button onclick="login()">Войти</button>
+                <button onclick="register()">Регистрация</button>
+                <p id="authMessage"></p>
+            </div>
+        </div>
+
+        <!-- Основной интерфейс -->
+        <div id="appSection" class="app-section" style="display: none;">
+            <header>
+                <h1>TaskFlow Pro</h1>
+                <button onclick="logout()" class="logout-btn">Выйти</button>
+            </header>
+
+            <div class="controls">
+                <input type="text" id="searchInput" placeholder="Поиск задач..." oninput="searchTasks()">
+                <select id="statusFilter" onchange="filterTasks()">
+                    <option value="">Все статусы</option>
+                    <option value="Создана">Создана</option>
+                    <option value="В работе">В работе</option>
+                    <option value="Завершена">Завершена</option>
+                </select>
+            </div>
+
+            <div class="task-form">
+                <input type="text" id="taskTitle" placeholder="Название задачи" required>
+                <textarea id="taskDescription" placeholder="Описание (опционально)"></textarea>
+                <button onclick="addTask()">Добавить задачу</button>
+            </div>
+
+            <div id="tasksContainer" class="tasks-container">
+                <h2>Ваши задачи</h2>
+                <div id="tasksList"></div>
+            </div>
+        </div>
     </div>
     <script src="script.js"></script>
 </body>
