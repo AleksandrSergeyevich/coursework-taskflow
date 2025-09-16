@@ -9,7 +9,7 @@ import time
 import psycopg2
 from psycopg2 import OperationalError
 import logging
-from functools import wraps  # ← ДОБАВЛЕНО
+from functools import wraps
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -29,7 +29,7 @@ db = SQLAlchemy(app)
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(120), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)  # ← ИСПРАВЛЕНО: БЫЛО 120, СТАЛО 255
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -105,7 +105,7 @@ def generate_token(user_id):
 
 # Исправленный декоратор — с @wraps(f)
 def token_required(f):
-    @wraps(f)  # ← ВОТ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
+    @wraps(f)
     def decorated(*args, **kwargs):
         token = None
         if 'Authorization' in request.headers:
