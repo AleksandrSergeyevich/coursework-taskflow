@@ -1,5 +1,6 @@
 class TaskFlowApp {
     constructor() {
+        // Загружаем токен из localStorage
         this.token = localStorage.getItem('taskflow_token') || null;
         this.userId = localStorage.getItem('taskflow_user_id') || null;
         this.init();
@@ -27,7 +28,7 @@ class TaskFlowApp {
         }
 
         try {
-            const response = await fetch('http://localhost:5000/login', {
+            const response = await fetch('http://192.168.50.94:5000/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
@@ -39,6 +40,8 @@ class TaskFlowApp {
             }
 
             const data = await response.json();
+            
+            // ✅ СОХРАНЯЕМ ТОКЕН
             this.token = data.token;
             this.userId = data.user_id;
             localStorage.setItem('taskflow_token', this.token);
@@ -65,7 +68,7 @@ class TaskFlowApp {
         }
 
         try {
-            const response = await fetch('http://localhost:5000/register', {
+            const response = await fetch('http://192.168.50.94:5000/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
@@ -109,12 +112,14 @@ class TaskFlowApp {
     async loadTasks() {
         const statusFilter = document.getElementById('statusFilter').value;
         const url = statusFilter ? 
-            `http://localhost:5000/tasks?status=${statusFilter}` : 
-            'http://localhost:5000/tasks';
+            `http://192.168.50.94:5000/tasks?status=${statusFilter}` : 
+            'http://192.168.50.94:5000/tasks';
 
         try {
             const response = await fetch(url, {
-                headers: { 'Authorization': `Bearer ${this.token}` }
+                headers: { 
+                    'Authorization': `Bearer ${this.token}`  // ← ОТПРАВЛЯЕМ ТОКЕН
+                }
             });
 
             if (!response.ok) throw new Error('Ошибка загрузки задач');
@@ -137,8 +142,10 @@ class TaskFlowApp {
         }
 
         try {
-            const response = await fetch(`http://localhost:5000/tasks/search?q=${query}`, {
-                headers: { 'Authorization': `Bearer ${this.token}` }
+            const response = await fetch(`http://192.168.50.94:5000/tasks/search?q=${query}`, {
+                headers: { 
+                    'Authorization': `Bearer ${this.token}`  // ← ОТПРАВЛЯЕМ ТОКЕН
+                }
             });
 
             if (!response.ok) throw new Error('Ошибка поиска');
@@ -166,11 +173,11 @@ class TaskFlowApp {
         }
 
         try {
-            const response = await fetch('http://localhost:5000/tasks', {
+            const response = await fetch('http://192.168.50.94:5000/tasks', {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.token}`
+                    'Authorization': `Bearer ${this.token}`  // ← ОТПРАВЛЯЕМ ТОКЕН
                 },
                 body: JSON.stringify({ title, description })
             });
@@ -188,11 +195,11 @@ class TaskFlowApp {
     // Обновление статуса задачи
     async updateTaskStatus(taskId, newStatus) {
         try {
-            const response = await fetch(`http://localhost:5000/tasks/${taskId}/status`, {
+            const response = await fetch(`http://192.168.50.94:5000/tasks/${taskId}/status`, {
                 method: 'PUT',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.token}`
+                    'Authorization': `Bearer ${this.token}`  // ← ОТПРАВЛЯЕМ ТОКЕН
                 },
                 body: JSON.stringify({ status: newStatus })
             });
@@ -210,9 +217,11 @@ class TaskFlowApp {
         if (!confirm('Вы уверены, что хотите удалить эту задачу?')) return;
 
         try {
-            const response = await fetch(`http://localhost:5000/tasks/${taskId}`, {
+            const response = await fetch(`http://192.168.50.94:5000/tasks/${taskId}`, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${this.token}` }
+                headers: { 
+                    'Authorization': `Bearer ${this.token}`  // ← ОТПРАВЛЯЕМ ТОКЕН
+                }
             });
 
             if (!response.ok) throw new Error('Ошибка удаления задачи');

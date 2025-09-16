@@ -10,6 +10,7 @@ import psycopg2
 from psycopg2 import OperationalError
 import logging
 from functools import wraps
+import requests  # ← ДОБАВЛЕНО
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -18,18 +19,24 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# Секретный ключ для JWT (в продакшене — из .env!)
-app.config['SECRET_KEY'] = 'your-secret-key-change-in-production'
+# Конфигурация из .env
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'fallback-secret-key')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'postgresql://taskflow_user:taskflow_pass@db/taskflow_db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# Токены из .env
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
+GITHUB_REPO = "AleksandrSergeyevich/coursework-taskflow"  # ← ЗАМЕНИ НА СВОЙ РЕПОЗИТОРИЙ
+
 db = SQLAlchemy(app)
 
-# Модель пользователя
+# Модель пользователя (добавим chat_id для Telegram)
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)  # ← ИСПРАВЛЕНО: БЫЛО 120, СТАЛО 255
+    password_hash = db.Column(db.String(255), nullable=False)
+    telegram_chat_id = db.Column(db.String(50), nullable=True)  # ← ДОБАВЛЕНО
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -42,8 +49,9 @@ class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(100), nullable=False)
     description = db.Column(db.String(500), nullable=True)
-    status = db.Column(db.String(20), default='Создана')  # Создана, В работе, Завершена
+    status = db.Column(db.String(20), default='Создана')
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    github_issue_number = db.Column(db.Integer, nullable=True)  # ← ДОБАВЛЕНО
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
     def to_dict(self):
@@ -53,6 +61,7 @@ class Task(db.Model):
             "description": self.description,
             "status": self.status,
             "user_id": self.user_id,
+            "github_issue_number": self.github_issue_number,
             "created_at": self.created_at.isoformat()
         }
 
@@ -87,7 +96,7 @@ def initialize_once():
         db.create_all()
         # Создаём тестового пользователя, если нет
         if not User.query.first():
-            test_user = User(username='admin')
+            test_user = User(username='admin', telegram_chat_id='YOUR_TELEGRAM_CHAT_ID')  # ← ЗАМЕНИ!
             test_user.set_password('admin')
             db.session.add(test_user)
             db.session.commit()
@@ -103,7 +112,7 @@ def generate_token(user_id):
     }, app.config['SECRET_KEY'], algorithm="HS256")
     return token
 
-# Исправленный декоратор — с @wraps(f)
+# Исправленный декоратор
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -120,6 +129,46 @@ def token_required(f):
         return f(current_user, *args, **kwargs)
     return decorated
 
+# 🤖 Функция отправки Telegram-уведомления
+def send_telegram_notification(chat_id, text):
+    if not TELEGRAM_BOT_TOKEN or not chat_id:
+        logger.warning("Telegram bot token or chat_id not set")
+        return
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        data = {"chat_id": chat_id, "text": text}
+        response = requests.post(url, data=data)
+        if response.status_code == 200:
+            logger.info(f"✅ Telegram notification sent to {chat_id}")
+        else:
+            logger.error(f"❌ Failed to send Telegram notification: {response.text}")
+    except Exception as e:
+        logger.error(f"❌ Telegram error: {e}")
+
+# 🐙 Функция создания GitHub Issue
+def create_github_issue(title, body):
+    if not GITHUB_TOKEN:
+        logger.warning("GitHub token not set")
+        return None
+    try:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        data = {"title": title, "body": body}
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 201:
+            issue_number = response.json()['number']
+            logger.info(f"✅ GitHub Issue #{issue_number} created")
+            return issue_number
+        else:
+            logger.error(f"❌ Failed to create GitHub Issue: {response.text}")
+            return None
+    except Exception as e:
+        logger.error(f"❌ GitHub error: {e}")
+        return None
+
 # Эндпоинты
 
 ## Регистрация
@@ -134,6 +183,9 @@ def register():
 
     new_user = User(username=data['username'])
     new_user.set_password(data['password'])
+    # Можно добавить поле для telegram_chat_id в JSON
+    if 'telegram_chat_id' in data:
+        new_user.telegram_chat_id = data['telegram_chat_id']
     db.session.add(new_user)
     db.session.commit()
     return jsonify({"message": "User registered successfully"}), 201
@@ -149,7 +201,7 @@ def login():
     token = generate_token(user.id)
     return jsonify({"token": token, "user_id": user.id})
 
-## Получить все задачи пользователя (с фильтром по статусу)
+## Получить все задачи пользователя
 @app.route('/tasks', methods=['GET'])
 @token_required
 def get_tasks(current_user):
@@ -160,7 +212,7 @@ def get_tasks(current_user):
     tasks = query.all()
     return jsonify([task.to_dict() for task in tasks])
 
-## Создать задачу
+## Создать задачу (+ GitHub Issue)
 @app.route('/tasks', methods=['POST'])
 @token_required
 def create_task(current_user):
@@ -175,9 +227,19 @@ def create_task(current_user):
     )
     db.session.add(new_task)
     db.session.commit()
+
+    # 🐙 Создаём GitHub Issue
+    issue_number = create_github_issue(
+        title=f"Task: {new_task.title}",
+        body=f"Description: {new_task.description}\n\nCreated via TaskFlow at {new_task.created_at}"
+    )
+    if issue_number:
+        new_task.github_issue_number = issue_number
+        db.session.commit()
+
     return jsonify(new_task.to_dict()), 201
 
-## Обновить статус задачи
+## Обновить статус задачи (+ Telegram уведомление)
 @app.route('/tasks/<int:task_id>/status', methods=['PUT'])
 @token_required
 def update_task_status(current_user, task_id):
@@ -189,8 +251,16 @@ def update_task_status(current_user, task_id):
     if 'status' not in data or data['status'] not in ['Создана', 'В работе', 'Завершена']:
         return jsonify({"error": "Invalid status"}), 400
 
+    old_status = task.status
     task.status = data['status']
     db.session.commit()
+
+    # 🤖 Отправляем Telegram-уведомление
+    user = User.query.get(current_user.id)
+    if user.telegram_chat_id:
+        message = f"✅ Задача обновлена!\n\n📌 {task.title}\n🔄 Статус: {old_status} → {task.status}"
+        send_telegram_notification(user.telegram_chat_id, message)
+
     return jsonify(task.to_dict())
 
 ## Удалить задачу
@@ -204,7 +274,7 @@ def delete_task(current_user, task_id):
     db.session.commit()
     return jsonify({"message": "Task deleted"})
 
-## Поиск задач по названию
+## Поиск задач
 @app.route('/tasks/search', methods=['GET'])
 @token_required
 def search_tasks(current_user):
