@@ -9,6 +9,7 @@ import time
 import psycopg2
 from psycopg2 import OperationalError
 import logging
+from functools import wraps  # ← ДОБАВЛЕНО
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -102,8 +103,9 @@ def generate_token(user_id):
     }, app.config['SECRET_KEY'], algorithm="HS256")
     return token
 
-# Декоратор для проверки JWT
+# Исправленный декоратор — с @wraps(f)
 def token_required(f):
+    @wraps(f)  # ← ВОТ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
     def decorated(*args, **kwargs):
         token = None
         if 'Authorization' in request.headers:
