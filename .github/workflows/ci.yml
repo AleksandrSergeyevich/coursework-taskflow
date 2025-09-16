@@ -1,4 +1,4 @@
-name: CI Pipeline
+name: CI Pipeline for TaskFlow
 
 on:
   push:
@@ -11,32 +11,75 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    # 1. Получаем код из репозитория
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # 2. Настраиваем Docker Buildx (для сборки образов в GitHub Actions)
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
+    # 3. Собираем и тестируем бэкенд отдельно
     - name: Build and test backend
       run: |
+        echo "📦 Building backend image..."
         cd backend
         docker build -t taskflow-backend .
+
+        echo "🚀 Starting backend container..."
         docker run -d --name test-backend -p 5000:5000 taskflow-backend
-        sleep 15  # Ждём запуска Flask
-        curl -f http://localhost:5000/health || exit 1
+
+        echo "⏳ Waiting 40 seconds for Flask to initialize and connect to DB..."
+        sleep 40
+
+        echo "✅ Checking /health endpoint..."
+        if curl -f http://localhost:5000/health; then
+          echo "💚 Backend is healthy!"
+        else
+          echo "❌ Backend health check FAILED"
+          docker logs test-backend  # Показываем логи Flask для отладки
+          exit 1
+        fi
+
+        echo "🛑 Stopping backend container..."
         docker stop test-backend
         docker rm test-backend
 
+    # 4. Собираем фронтенд
     - name: Build frontend
       run: |
+        echo "📦 Building frontend image..."
         cd frontend
         docker build -t taskflow-frontend .
+        echo "✅ Frontend image built successfully"
 
+    # 5. Запускаем всю систему через Docker Compose и проверяем
     - name: Run full system with Docker Compose
       run: |
+        echo "🐳 Starting full system with Docker Compose..."
         docker compose up -d
-        sleep 30
-        curl -f http://localhost:5000/health || exit 1
-        curl -f http://localhost:8080 || exit 1
-        docker compose down
 
+        echo "⏳ Waiting 50 seconds for all services to initialize..."
+        sleep 50
+
+        echo "✅ Checking backend health (/health)..."
+        if curl -f http://localhost:5000/health; then
+          echo "💚 Backend is responding"
+        else
+          echo "❌ Backend is NOT responding"
+          docker compose logs backend  # Показываем логи бэкенда
+          exit 1
+        fi
+
+        echo "✅ Checking frontend availability..."
+        if curl -f http://localhost:8080; then
+          echo "💚 Frontend is responding"
+        else
+          echo "❌ Frontend is NOT responding"
+          docker compose logs frontend
+          exit 1
+        fi
+
+        echo "✅ FULL SYSTEM IS RUNNING SUCCESSFULLY!"
+        echo "🛑 Stopping all containers..."
+        docker compose down
