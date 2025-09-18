@@ -6,9 +6,23 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
     padding: 20px;
+    transition: background 0.3s ease;
+}
+
+.theme-light {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.theme-dark {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #fff;
+}
+
+.theme-blue {
+    background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
+    color: #fff;
 }
 
 .app-container {
@@ -41,6 +55,13 @@ body {
     border-radius: 8px;
     font-size: 16px;
     transition: border 0.3s;
+}
+
+.theme-dark .auth-form input,
+.theme-blue .auth-form input {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
 }
 
 .auth-form input:focus {
@@ -102,6 +123,11 @@ header h1 {
     font-size: 2.5em;
 }
 
+.theme-dark header h1,
+.theme-blue header h1 {
+    color: #fff;
+}
+
 .logout-btn {
     background: #ff6b6b;
     color: white;
@@ -112,6 +138,58 @@ header h1 {
     font-weight: bold;
 }
 
+/* Меню навигации */
+.nav-menu {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 30px;
+    flex-wrap: wrap;
+}
+
+.nav-menu button {
+    padding: 12px 24px;
+    background: #f8f9fa;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+.theme-dark .nav-menu button,
+.theme-blue .nav-menu button {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+}
+
+.nav-menu button:hover {
+    background: #e9ecef;
+    transform: translateY(-2px);
+}
+
+.theme-dark .nav-menu button:hover,
+.theme-blue .nav-menu button:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.nav-menu button.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+/* Секции */
+.section {
+    display: none;
+}
+
+.section.active {
+    display: block;
+}
+
+/* Элементы управления */
 .controls {
     display: flex;
     gap: 15px;
@@ -129,12 +207,27 @@ header h1 {
     min-width: 200px;
 }
 
+.theme-dark .controls input,
+.theme-dark .controls select,
+.theme-blue .controls input,
+.theme-blue .controls select {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+}
+
 .task-form {
     background: #f8f9fa;
     padding: 25px;
     border-radius: 12px;
     margin-bottom: 30px;
     border: 2px dashed #667eea;
+}
+
+.theme-dark .task-form,
+.theme-blue .task-form {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.3);
 }
 
 .task-form input,
@@ -145,6 +238,15 @@ header h1 {
     border: 2px solid #ddd;
     border-radius: 8px;
     font-size: 16px;
+}
+
+.theme-dark .task-form input,
+.theme-dark .task-form textarea,
+.theme-blue .task-form input,
+.theme-blue .task-form textarea {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
 }
 
 .task-form textarea {
@@ -174,6 +276,11 @@ header h1 {
     font-size: 1.8em;
 }
 
+.theme-dark .tasks-container h2,
+.theme-blue .tasks-container h2 {
+    color: #fff;
+}
+
 #tasksList {
     display: grid;
     gap: 20px;
@@ -186,6 +293,18 @@ header h1 {
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
     border-left: 5px solid #667eea;
     position: relative;
+    transition: transform 0.2s;
+}
+
+.theme-dark .task-card,
+.theme-blue .task-card {
+    background: rgba(255, 255, 255, 0.05);
+    color: #fff;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.task-card:hover {
+    transform: translateY(-2px);
 }
 
 .task-card.status-В работе {
@@ -203,10 +322,26 @@ header h1 {
     color: #333;
 }
 
+.theme-dark .task-title,
+.theme-blue .task-title {
+    color: #fff;
+}
+
 .task-description {
     color: #666;
     margin-bottom: 15px;
     line-height: 1.5;
+}
+
+.theme-dark .task-description,
+.theme-blue .task-description {
+    color: #ccc;
+}
+
+.task-due {
+    color: #e74c3c;
+    font-weight: bold;
+    margin-top: 10px;
 }
 
 .task-meta {
@@ -216,6 +351,11 @@ header h1 {
     font-size: 0.9em;
     color: #999;
     margin-bottom: 15px;
+}
+
+.theme-dark .task-meta,
+.theme-blue .task-meta {
+    color: #aaa;
 }
 
 .task-actions {
@@ -253,14 +393,73 @@ header h1 {
     color: white;
 }
 
-/* Анимации */
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+/* Группы настроек */
+.settings-group {
+    background: #f8f9fa;
+    padding: 25px;
+    border-radius: 12px;
+    margin-bottom: 25px;
+    border: 2px solid #e9ecef;
 }
 
-.task-card {
-    animation: fadeIn 0.5s ease-out;
+.theme-dark .settings-group,
+.theme-blue .settings-group {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.settings-group h3 {
+    margin-bottom: 15px;
+    color: #333;
+    font-size: 1.3em;
+}
+
+.theme-dark .settings-group h3,
+.theme-blue .settings-group h3 {
+    color: #fff;
+}
+
+.settings-group p {
+    margin-bottom: 15px;
+    color: #666;
+}
+
+.theme-dark .settings-group p,
+.theme-blue .settings-group p {
+    color: #ccc;
+}
+
+.settings-group input,
+.settings-group select,
+.settings-group button {
+    margin: 10px 0;
+}
+
+.settings-group label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+/* Тосты */
+.toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #28a745;
+    color: white;
+    padding: 15px 25px;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    z-index: 1000;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
 }
 
 /* Адаптивность */
@@ -278,5 +477,9 @@ header h1 {
         flex-direction: column;
         gap: 15px;
         text-align: center;
+    }
+    
+    .nav-menu {
+        flex-direction: column;
     }
 }

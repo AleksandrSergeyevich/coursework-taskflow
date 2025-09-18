@@ -6,7 +6,7 @@
     <title>TaskFlow Pro — Управление задачами</title>
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="theme-light">
     <div class="app-container">
         <!-- Форма авторизации -->
         <div id="authSection" class="auth-section">
@@ -27,25 +27,77 @@
                 <button onclick="logout()" class="logout-btn">Выйти</button>
             </header>
 
-            <div class="controls">
-                <input type="text" id="searchInput" placeholder="Поиск задач..." oninput="searchTasks()">
-                <select id="statusFilter" onchange="filterTasks()">
-                    <option value="">Все статусы</option>
-                    <option value="Создана">Создана</option>
-                    <option value="В работе">В работе</option>
-                    <option value="Завершена">Завершена</option>
-                </select>
+            <!-- Меню навигации -->
+            <nav class="nav-menu">
+                <button onclick="app.showSection('tasks')" class="active">📋 Задачи</button>
+                <button onclick="app.showSection('settings')">⚙️ Настройки</button>
+            </nav>
+
+            <!-- Секция задач -->
+            <div id="tasksSection" class="section active">
+                <div class="controls">
+                    <input type="text" id="searchInput" placeholder="Поиск задач..." oninput="app.searchTasks()">
+                    <select id="statusFilter" onchange="app.filterTasks()">
+                        <option value="">Все статусы</option>
+                        <option value="Создана">Создана</option>
+                        <option value="В работе">В работе</option>
+                        <option value="Завершена">Завершена</option>
+                    </select>
+                </div>
+
+                <div class="task-form">
+                    <input type="text" id="taskTitle" placeholder="Название задачи" required>
+                    <textarea id="taskDescription" placeholder="Описание (опционально)"></textarea>
+                    <input type="date" id="taskDueDate" placeholder="Дата выполнения">
+                    <button onclick="app.addTask()">Добавить задачу</button>
+                </div>
+
+                <div id="tasksContainer" class="tasks-container">
+                    <h2>Ваши задачи</h2>
+                    <div id="tasksList"></div>
+                </div>
             </div>
 
-            <div class="task-form">
-                <input type="text" id="taskTitle" placeholder="Название задачи" required>
-                <textarea id="taskDescription" placeholder="Описание (опционально)"></textarea>
-                <button onclick="addTask()">Добавить задачу</button>
-            </div>
+            <!-- Секция настроек -->
+            <div id="settingsSection" class="section">
+                <h2>⚙️ Настройки</h2>
+                
+                <!-- Telegram -->
+                <div class="settings-group">
+                    <h3>📲 Telegram</h3>
+                    <p>Привяжите Telegram для получения уведомлений:</p>
+                    <input type="text" id="telegramCommand" readonly placeholder="Команда появится после входа">
+                    <button onclick="app.copyTelegramCommand()">📋 Скопировать</button>
+                    <p id="telegramStatus"></p>
+                </div>
 
-            <div id="tasksContainer" class="tasks-container">
-                <h2>Ваши задачи</h2>
-                <div id="tasksList"></div>
+                <!-- Тема -->
+                <div class="settings-group">
+                    <h3>🎨 Тема интерфейса</h3>
+                    <select id="themeSelect" onchange="app.changeTheme()">
+                        <option value="light">Светлая</option>
+                        <option value="dark">Тёмная</option>
+                        <option value="blue">Синяя</option>
+                    </select>
+                </div>
+
+                <!-- Уведомления -->
+                <div class="settings-group">
+                    <h3>🔔 Уведомления</h3>
+                    <label>
+                        <input type="checkbox" id="desktopNotifications" onchange="app.toggleDesktopNotifications()">
+                        Разрешить desktop-уведомления
+                    </label>
+                </div>
+
+                <!-- Язык -->
+                <div class="settings-group">
+                    <h3>🌐 Язык</h3>
+                    <select id="languageSelect" onchange="app.changeLanguage()">
+                        <option value="ru">Русский</option>
+                        <option value="en">English</option>
+                    </select>
+                </div>
             </div>
         </div>
     </div>
