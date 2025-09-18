@@ -10,7 +10,7 @@ import psycopg2
 from psycopg2 import OperationalError
 import logging
 from functools import wraps
-import requests  # ← ДОБАВЛЕНО
+import requests
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -27,16 +27,16 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # Токены из .env
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
-GITHUB_REPO = "AleksandrSergeyevich/coursework-taskflow"  # ← ЗАМЕНИ НА СВОЙ РЕПОЗИТОРИЙ
+GITHUB_REPO = "AleksandrSergeyevich/coursework-taskflow"
 
 db = SQLAlchemy(app)
 
-# Модель пользователя (добавим chat_id для Telegram)
+# Модель пользователя
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
-    telegram_chat_id = db.Column(db.String(50), nullable=True)  # ← ДОБАВЛЕНО
+    telegram_chat_id = db.Column(db.String(50), nullable=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -50,8 +50,9 @@ class Task(db.Model):
     title = db.Column(db.String(100), nullable=False)
     description = db.Column(db.String(500), nullable=True)
     status = db.Column(db.String(20), default='Создана')
+    due_date = db.Column(db.Date, nullable=True)  # ← ДОБАВЛЕНО
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    github_issue_number = db.Column(db.Integer, nullable=True)  # ← ДОБАВЛЕНО
+    github_issue_number = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
     def to_dict(self):
@@ -60,6 +61,7 @@ class Task(db.Model):
             "title": self.title,
             "description": self.description,
             "status": self.status,
+            "due_date": self.due_date.isoformat() if self.due_date else None,  # ← ДОБАВЛЕНО
             "user_id": self.user_id,
             "github_issue_number": self.github_issue_number,
             "created_at": self.created_at.isoformat()
@@ -96,7 +98,7 @@ def initialize_once():
         db.create_all()
         # Создаём тестового пользователя, если нет
         if not User.query.first():
-            test_user = User(username='admin', telegram_chat_id='YOUR_TELEGRAM_CHAT_ID')  # ← ЗАМЕНИ!
+            test_user = User(username='admin')
             test_user.set_password('admin')
             db.session.add(test_user)
             db.session.commit()
@@ -183,9 +185,6 @@ def register():
 
     new_user = User(username=data['username'])
     new_user.set_password(data['password'])
-    # Можно добавить поле для telegram_chat_id в JSON
-    if 'telegram_chat_id' in data:
-        new_user.telegram_chat_id = data['telegram_chat_id']
     db.session.add(new_user)
     db.session.commit()
     return jsonify({"message": "User registered successfully"}), 201
@@ -200,6 +199,34 @@ def login():
 
     token = generate_token(user.id)
     return jsonify({"token": token, "user_id": user.id})
+
+## Telegram Webhook
+@app.route('/telegram-webhook', methods=['POST'])
+def telegram_webhook():
+    data = request.json
+    if not data or 'message' not in data:
+        return jsonify({"status": "ignored"})
+
+    message = data['message']
+    chat_id = str(message['chat']['id'])
+    text = message.get('text', '')
+
+    if text.startswith('/start'):
+        parts = text.split()
+        if len(parts) > 1 and parts[1].isdigit():
+            user_id = int(parts[1])
+            user = User.query.get(user_id)
+            if user:
+                user.telegram_chat_id = chat_id
+                db.session.commit()
+                logger.info(f"✅ Telegram chat_id {chat_id} привязан к пользователю {user.username}")
+                send_telegram_notification(chat_id, f"✅ Ваш Telegram аккаунт успешно привязан к TaskFlow!")
+            else:
+                send_telegram_notification(chat_id, "❌ Пользователь не найден.")
+        else:
+            send_telegram_notification(chat_id, "ℹ️ Используйте команду в формате: /start <user_id>")
+    
+    return jsonify({"status": "ok"})
 
 ## Получить все задачи пользователя
 @app.route('/tasks', methods=['GET'])
@@ -223,6 +250,7 @@ def create_task(current_user):
     new_task = Task(
         title=data['title'].strip(),
         description=data.get('description', ''),
+        due_date=data.get('due_date'),  # ← ДОБАВЛЕНО
         user_id=current_user.id
     )
     db.session.add(new_task)
@@ -231,7 +259,7 @@ def create_task(current_user):
     # 🐙 Создаём GitHub Issue
     issue_number = create_github_issue(
         title=f"Task: {new_task.title}",
-        body=f"Description: {new_task.description}\n\nCreated via TaskFlow at {new_task.created_at}"
+        body=f"Description: {new_task.description}\nDue Date: {new_task.due_date}\nCreated via TaskFlow at {new_task.created_at}"
     )
     if issue_number:
         new_task.github_issue_number = issue_number
