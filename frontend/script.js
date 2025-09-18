@@ -3,6 +3,71 @@ class TaskFlowApp {
         this.token = localStorage.getItem('taskflow_token') || null;
         this.userId = localStorage.getItem('taskflow_user_id') || null;
         this.apiUrl = 'http://192.168.50.94:5000';
+        this.translations = {
+            ru: {
+                title: "ProdBoost — Управление задачами",
+                tasks: "📋 Задачи",
+                settings: "⚙️ Настройки",
+                taskFormTitle: "Название задачи",
+                taskFormDescription: "Описание (опционально)",
+                taskFormDueDate: "Дата выполнения",
+                taskFormButton: "Добавить задачу",
+                tasksHeader: "Ваши задачи",
+                noTasks: "📋 Список задач пуст",
+                taskStatusCreated: "Создана",
+                taskStatusInProgress: "В работе",
+                taskStatusCompleted: "Завершена",
+                taskActionStart: "▶️ В работу",
+                taskActionComplete: "✅ Завершить",
+                taskActionDelete: "🗑️ Удалить",
+                authTitle: "🚀 ProdBoost",
+                authLogin: "Войти",
+                authRegister: "Регистрация",
+                authUsername: "Имя пользователя",
+                authPassword: "Пароль",
+                logout: "Выйти",
+                telegramTitle: "📲 Telegram",
+                telegramInstruction: "Привяжите Telegram для получения уведомлений:",
+                telegramCopy: "📋 Скопировать",
+                themeTitle: "🎨 Тема интерфейса",
+                notificationsTitle: "🔔 Desktop-уведомления",
+                languageTitle: "🌐 Язык интерфейса",
+                notificationsEnabled: "Включены",
+                notificationsDisabled: "Отключены"
+            },
+            en: {
+                title: "ProdBoost — Task Management",
+                tasks: "📋 Tasks",
+                settings: "⚙️ Settings",
+                taskFormTitle: "Task Title",
+                taskFormDescription: "Description (optional)",
+                taskFormDueDate: "Due Date",
+                taskFormButton: "Add Task",
+                tasksHeader: "Your Tasks",
+                noTasks: "📋 Task list is empty",
+                taskStatusCreated: "Created",
+                taskStatusInProgress: "In Progress",
+                taskStatusCompleted: "Completed",
+                taskActionStart: "▶️ Start",
+                taskActionComplete: "✅ Complete",
+                taskActionDelete: "🗑️ Delete",
+                authTitle: "🚀 ProdBoost",
+                authLogin: "Login",
+                authRegister: "Register",
+                authUsername: "Username",
+                authPassword: "Password",
+                logout: "Logout",
+                telegramTitle: "📲 Telegram",
+                telegramInstruction: "Link Telegram to receive notifications:",
+                telegramCopy: "📋 Copy",
+                themeTitle: "🎨 Theme",
+                notificationsTitle: "🔔 Desktop Notifications",
+                languageTitle: "🌐 Interface Language",
+                notificationsEnabled: "Enabled",
+                notificationsDisabled: "Disabled"
+            }
+        };
+        this.currentLanguage = localStorage.getItem('taskflow_language') || 'ru';
         this.init();
     }
 
@@ -12,14 +77,33 @@ class TaskFlowApp {
             this.loadTasks();
             this.updateTelegramCommand();
             this.loadUserSettings();
+            this.applyTranslations();
         } else {
             this.showAuth();
         }
     }
 
+    applyTranslations() {
+        const t = this.translations[this.currentLanguage];
+        // Обновляем заголовок
+        document.title = t.title;
+        // Обновляем тексты в интерфейсе — ТОЛЬКО если элемент существует
+        const elements = document.querySelectorAll('[data-i18n]');
+        elements.forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (t[key]) {
+                if (el.tagName === 'INPUT' && el.placeholder) {
+                    el.placeholder = t[key];
+                } else {
+                    el.textContent = t[key];
+                }
+            }
+        });
+    }
+
     async login() {
-        const username = document.getElementById('username').value.trim();
-        const password = document.getElementById('password').value.trim();
+        const username = document.getElementById('username')?.value.trim();
+        const password = document.getElementById('password')?.value.trim();
         const messageEl = document.getElementById('authMessage');
 
         if (!username || !password) {
@@ -62,8 +146,8 @@ class TaskFlowApp {
     }
 
     async register() {
-        const username = document.getElementById('username').value.trim();
-        const password = document.getElementById('password').value.trim();
+        const username = document.getElementById('username')?.value.trim();
+        const password = document.getElementById('password')?.value.trim();
         const messageEl = document.getElementById('authMessage');
 
         if (!username || !password) {
@@ -145,7 +229,7 @@ class TaskFlowApp {
     }
 
     async loadTasks() {
-        const statusFilter = document.getElementById('statusFilter').value;
+        const statusFilter = document.getElementById('statusFilter')?.value;
         const url = statusFilter ? 
             `${this.apiUrl}/tasks?status=${statusFilter}` : 
             `${this.apiUrl}/tasks`;
@@ -169,7 +253,7 @@ class TaskFlowApp {
     }
 
     async searchTasks() {
-        const query = document.getElementById('searchInput').value.trim();
+        const query = document.getElementById('searchInput')?.value.trim();
         if (!query) {
             this.loadTasks();
             return;
@@ -196,9 +280,9 @@ class TaskFlowApp {
     }
 
     async addTask() {
-        const title = document.getElementById('taskTitle').value.trim();
-        const description = document.getElementById('taskDescription').value.trim();
-        const dueDate = document.getElementById('taskDueDate').value;
+        const title = document.getElementById('taskTitle')?.value.trim();
+        const description = document.getElementById('taskDescription')?.value.trim();
+        const dueDate = document.getElementById('taskDueDate')?.value;
 
         if (!title) {
             alert('❗ Введите название задачи');
@@ -275,6 +359,8 @@ class TaskFlowApp {
 
     renderTasks(tasks) {
         const container = document.getElementById('tasksList');
+        if (!container) return;
+
         container.innerHTML = '';
 
         if (tasks.length === 0) {
@@ -307,40 +393,73 @@ class TaskFlowApp {
     // Настройки
     loadUserSettings() {
         const savedTheme = localStorage.getItem('taskflow_theme') || 'light';
-        document.getElementById('themeSelect').value = savedTheme;
-        document.body.className = `theme-${savedTheme}`;
+        this.setTheme(savedTheme);
         
         const savedNotifications = localStorage.getItem('taskflow_desktop_notifications') === 'true';
-        document.getElementById('desktopNotifications').checked = savedNotifications;
+        const checkbox = document.getElementById('desktopNotifications');
+        if (checkbox) {
+            checkbox.checked = savedNotifications;
+            this.updateNotificationStatus(savedNotifications);
+        }
         
         const savedLanguage = localStorage.getItem('taskflow_language') || 'ru';
-        document.getElementById('languageSelect').value = savedLanguage;
+        const select = document.getElementById('languageSelect');
+        if (select) {
+            select.value = savedLanguage;
+        }
+        this.currentLanguage = savedLanguage;
+        this.applyTranslations();
     }
 
-    changeTheme() {
-        const theme = document.getElementById('themeSelect').value;
+    setTheme(theme) {
         document.body.className = `theme-${theme}`;
         localStorage.setItem('taskflow_theme', theme);
+        // Обновляем активную кнопку
+        document.querySelectorAll('.theme-btn').forEach(btn => {
+            btn.style.opacity = '0.5';
+        });
+        document.querySelector(`.theme-btn.${theme}`)?.style.opacity = '1';
     }
 
     toggleDesktopNotifications() {
         const checkbox = document.getElementById('desktopNotifications');
+        const statusEl = document.getElementById('notificationStatus');
+        if (!checkbox || !statusEl) return;
+
         if (checkbox.checked && Notification.permission !== "granted") {
             Notification.requestPermission().then(permission => {
                 if (permission === "granted") {
                     this.showToast('✅ Desktop-уведомления разрешены');
+                    this.updateNotificationStatus(true);
                 } else {
                     checkbox.checked = false;
                     this.showToast('❌ Уведомления заблокированы');
+                    this.updateNotificationStatus(false);
                 }
             });
+        } else {
+            this.updateNotificationStatus(checkbox.checked);
         }
         localStorage.setItem('taskflow_desktop_notifications', checkbox.checked);
     }
 
+    updateNotificationStatus(isEnabled) {
+        const statusEl = document.getElementById('notificationStatus');
+        if (!statusEl) return;
+
+        const t = this.translations[this.currentLanguage];
+        statusEl.textContent = isEnabled ? t.notificationsEnabled : t.notificationsDisabled;
+        statusEl.style.color = isEnabled ? '#28a745' : '#dc3545';
+    }
+
     changeLanguage() {
-        const lang = document.getElementById('languageSelect').value;
+        const select = document.getElementById('languageSelect');
+        if (!select) return;
+
+        const lang = select.value;
+        this.currentLanguage = lang;
         localStorage.setItem('taskflow_language', lang);
+        this.applyTranslations();
         this.showToast(`✅ Язык изменён на ${lang === 'ru' ? 'Русский' : 'English'}`);
     }
 
@@ -355,9 +474,11 @@ class TaskFlowApp {
     }
 }
 
-const app = new TaskFlowApp();
+document.addEventListener('DOMContentLoaded', function() {
+    const app = new TaskFlowApp();
 
-function login() { app.login(); }
-function register() { app.register(); }
-function logout() { app.logout(); }
-function copyTelegramCommand() { app.copyTelegramCommand(); }
+    window.login = function() { app.login(); };
+    window.register = function() { app.register(); };
+    window.logout = function() { app.logout(); };
+    window.copyTelegramCommand = function() { app.copyTelegramCommand(); };
+});

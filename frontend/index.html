@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TaskFlow Pro — Управление задачами</title>
+    <title data-i18n="title">ProdBoost — Управление задачами</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="theme-light">
@@ -11,11 +11,11 @@
         <!-- Форма авторизации -->
         <div id="authSection" class="auth-section">
             <div class="auth-form">
-                <h2>TaskFlow Pro</h2>
+                <h2 data-i18n="authTitle">🚀 ProdBoost</h2>
                 <input type="text" id="username" placeholder="Имя пользователя" required>
                 <input type="password" id="password" placeholder="Пароль" required>
-                <button onclick="login()">Войти</button>
-                <button onclick="register()">Регистрация</button>
+                <button onclick="login()" data-i18n="authLogin">Войти</button>
+                <button onclick="register()" data-i18n="authRegister">Регистрация</button>
                 <p id="authMessage"></p>
             </div>
         </div>
@@ -23,14 +23,14 @@
         <!-- Основной интерфейс -->
         <div id="appSection" class="app-section" style="display: none;">
             <header>
-                <h1>TaskFlow Pro</h1>
-                <button onclick="logout()" class="logout-btn">Выйти</button>
+                <h1 data-i18n="title">🚀 ProdBoost</h1>
+                <button onclick="logout()" data-i18n="logout" class="logout-btn">Выйти</button>
             </header>
 
             <!-- Меню навигации -->
             <nav class="nav-menu">
-                <button onclick="app.showSection('tasks')" class="active">📋 Задачи</button>
-                <button onclick="app.showSection('settings')">⚙️ Настройки</button>
+                <button onclick="app.showSection('tasks')" class="active" data-i18n="tasks">📋 Задачи</button>
+                <button onclick="app.showSection('settings')" data-i18n="settings">⚙️ Настройки</button>
             </nav>
 
             <!-- Секция задач -->
@@ -46,53 +46,56 @@
                 </div>
 
                 <div class="task-form">
-                    <input type="text" id="taskTitle" placeholder="Название задачи" required>
-                    <textarea id="taskDescription" placeholder="Описание (опционально)"></textarea>
-                    <input type="date" id="taskDueDate" placeholder="Дата выполнения">
-                    <button onclick="app.addTask()">Добавить задачу</button>
+                    <input type="text" id="taskTitle" placeholder="Название задачи" required data-i18n="taskFormTitle">
+                    <textarea id="taskDescription" placeholder="Описание (опционально)" data-i18n="taskFormDescription"></textarea>
+                    <input type="date" id="taskDueDate" placeholder="Дата выполнения" data-i18n="taskFormDueDate">
+                    <button onclick="app.addTask()" data-i18n="taskFormButton">Добавить задачу</button>
                 </div>
 
                 <div id="tasksContainer" class="tasks-container">
-                    <h2>Ваши задачи</h2>
+                    <h2 data-i18n="tasksHeader">Ваши задачи</h2>
                     <div id="tasksList"></div>
                 </div>
             </div>
 
             <!-- Секция настроек -->
             <div id="settingsSection" class="section">
-                <h2>⚙️ Настройки</h2>
+                <h2 data-i18n="settings">⚙️ Настройки</h2>
                 
                 <!-- Telegram -->
                 <div class="settings-group">
-                    <h3>📲 Telegram</h3>
-                    <p>Привяжите Telegram для получения уведомлений:</p>
+                    <h3 data-i18n="telegramTitle">📲 Telegram</h3>
+                    <p data-i18n="telegramInstruction">Привяжите Telegram для получения уведомлений:</p>
                     <input type="text" id="telegramCommand" readonly placeholder="Команда появится после входа">
-                    <button onclick="app.copyTelegramCommand()">📋 Скопировать</button>
+                    <button onclick="app.copyTelegramCommand()" data-i18n="telegramCopy">📋 Скопировать</button>
                     <p id="telegramStatus"></p>
                 </div>
 
                 <!-- Тема -->
                 <div class="settings-group">
-                    <h3>🎨 Тема интерфейса</h3>
-                    <select id="themeSelect" onchange="app.changeTheme()">
-                        <option value="light">Светлая</option>
-                        <option value="dark">Тёмная</option>
-                        <option value="blue">Синяя</option>
-                    </select>
+                    <h3 data-i18n="themeTitle">🎨 Тема интерфейса</h3>
+                    <div class="theme-buttons">
+                        <button onclick="app.setTheme('light')" class="theme-btn light">Светлая</button>
+                        <button onclick="app.setTheme('dark')" class="theme-btn dark">Тёмная</button>
+                        <button onclick="app.setTheme('blue')" class="theme-btn blue">Синяя</button>
+                    </div>
                 </div>
 
                 <!-- Уведомления -->
                 <div class="settings-group">
-                    <h3>🔔 Уведомления</h3>
-                    <label>
-                        <input type="checkbox" id="desktopNotifications" onchange="app.toggleDesktopNotifications()">
-                        Разрешить desktop-уведомления
-                    </label>
+                    <h3 data-i18n="notificationsTitle">🔔 Desktop-уведомления</h3>
+                    <div class="notification-toggle">
+                        <label class="switch">
+                            <input type="checkbox" id="desktopNotifications" onchange="app.toggleDesktopNotifications()">
+                            <span class="slider round"></span>
+                        </label>
+                        <span id="notificationStatus">Отключены</span>
+                    </div>
                 </div>
 
                 <!-- Язык -->
                 <div class="settings-group">
-                    <h3>🌐 Язык</h3>
+                    <h3 data-i18n="languageTitle">🌐 Язык интерфейса</h3>
                     <select id="languageSelect" onchange="app.changeLanguage()">
                         <option value="ru">Русский</option>
                         <option value="en">English</option>
