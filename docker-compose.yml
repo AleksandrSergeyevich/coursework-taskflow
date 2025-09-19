@@ -1,45 +1,36 @@
 version: '3.8'
 
 services:
-  # Фронтенд-сервис
   frontend:
-    build: ./frontend          # Собираем образ из папки frontend
+    build: ./frontend
     ports:
-      - "8080:80"              # Пробрасываем порт 80 контейнера на 8080 хоста
+      - "8080:80"
     depends_on:
-      - backend                # Запускаем только после бэкенда
+      - backend
     networks:
-      - taskflow-net           # Подключаем к сети
+      - taskflow-net
 
-  # Бэкенд-сервис
   backend:
-    build: ./backend           # Собираем образ из папки backend
+    build: ./backend
     ports:
-      - "5000:5000"            # Пробрасываем порт API
-    environment:
-      - DATABASE_URL=postgresql://taskflow_user:taskflow_pass@db/taskflow_db
+      - "5000:5000"
+    env_file: .env
     depends_on:
-      - db                     # Запускаем только после БД
+      - db
     networks:
       - taskflow-net
 
-  # База данных PostgreSQL
   db:
-    image: postgres:15         # Используем официальный образ
-    environment:
-      POSTGRES_DB: taskflow_db
-      POSTGRES_USER: taskflow_user
-      POSTGRES_PASSWORD: taskflow_pass
+    image: postgres:15
+    env_file: .env
     volumes:
-      - postgres_data:/var/lib/postgresql/data  # Сохраняем данные между перезапусками
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - taskflow-net
 
-# Описываем том для БД
 volumes:
-  postgres_data:
+  postgres_data: {}
 
-# Описываем сеть для связи сервисов
 networks:
   taskflow-net:
     driver: bridge

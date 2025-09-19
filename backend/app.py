@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -11,6 +11,10 @@ from psycopg2 import OperationalError
 import logging
 from functools import wraps
 import requests
+import hashlib
+import hmac
+import random
+import string
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +41,7 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     telegram_chat_id = db.Column(db.String(50), nullable=True)
+    reset_code = db.Column(db.String(6), nullable=True)  # Для восстановления пароля
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -50,7 +55,7 @@ class Task(db.Model):
     title = db.Column(db.String(100), nullable=False)
     description = db.Column(db.String(500), nullable=True)
     status = db.Column(db.String(20), default='Создана')
-    due_date = db.Column(db.Date, nullable=True)  # ← ДОБАВЛЕНО
+    due_date = db.Column(db.Date, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     github_issue_number = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
@@ -61,7 +66,7 @@ class Task(db.Model):
             "title": self.title,
             "description": self.description,
             "status": self.status,
-            "due_date": self.due_date.isoformat() if self.due_date else None,  # ← ДОБАВЛЕНО
+            "due_date": self.due_date.isoformat() if self.due_date else None,
             "user_id": self.user_id,
             "github_issue_number": self.github_issue_number,
             "created_at": self.created_at.isoformat()
@@ -200,6 +205,88 @@ def login():
     token = generate_token(user.id)
     return jsonify({"token": token, "user_id": user.id})
 
+## Telegram Login Widget
+@app.route('/api/telegram-login', methods=['POST'])
+def telegram_login():
+    data = request.form.to_dict()
+    hash_ = data.pop('hash', None)
+
+    if not hash_:
+        return jsonify({"error": "Invalid request"}), 400
+
+    # Проверка подписи (защита от подделки)
+    secret_key = hashlib.sha256(TELEGRAM_BOT_TOKEN.encode()).digest()
+    check_string = '\n'.join(f'{k}={v}' for k, v in sorted(data.items()))
+    hmac_hash = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
+
+    if hmac_hash != hash_:
+        return jsonify({"error": "Invalid hash"}), 400
+
+    # Получаем данные пользователя
+    telegram_id = data['id']
+    username = data.get('username', f"user_{telegram_id}")
+    first_name = data.get('first_name', "User")
+
+    # Находим или создаём пользователя
+    user = User.query.filter_by(telegram_chat_id=str(telegram_id)).first()
+    if not user:
+        user = User(username=username, telegram_chat_id=str(telegram_id))
+        user.set_password(str(telegram_id))  # Временный пароль
+        db.session.add(user)
+        db.session.commit()
+        logger.info(f"✅ Создан пользователь через Telegram: {username}")
+
+    # Генерируем JWT-токен
+    token = generate_token(user.id)
+    return redirect(f"https://prodboost.ru/?token={token}&user_id={user.id}")
+
+## Восстановление пароля — отправка кода
+@app.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    identifier = data.get('identifier')  # username или telegram_chat_id
+
+    user = User.query.filter(
+        (User.username == identifier) | (User.telegram_chat_id == identifier)
+    ).first()
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Генерируем 6-значный код
+    reset_code = ''.join(random.choices(string.digits, k=6))
+    user.reset_code = reset_code
+    db.session.commit()
+
+    # Отправляем код в Telegram
+    if user.telegram_chat_id:
+        send_telegram_notification(
+            user.telegram_chat_id,
+            f"🔑 Код восстановления пароля: {reset_code}\nНикому не сообщайте этот код!"
+        )
+
+    return jsonify({"message": "Reset code sent to your Telegram"}), 200
+
+## Восстановление пароля — сброс
+@app.route('/reset-password', methods=['POST'])
+def reset_password():
+    data = request.get_json()
+    reset_code = data.get('reset_code')
+    new_password = data.get('new_password')
+
+    if not reset_code or not new_password:
+        return jsonify({"error": "Reset code and new password required"}), 400
+
+    user = User.query.filter_by(reset_code=reset_code).first()
+    if not user:
+        return jsonify({"error": "Invalid reset code"}), 400
+
+    user.set_password(new_password)
+    user.reset_code = None
+    db.session.commit()
+
+    return jsonify({"message": "Password reset successfully"}), 200
+
 ## Telegram Webhook
 @app.route('/telegram-webhook', methods=['POST'])
 def telegram_webhook():
@@ -220,7 +307,7 @@ def telegram_webhook():
                 user.telegram_chat_id = chat_id
                 db.session.commit()
                 logger.info(f"✅ Telegram chat_id {chat_id} привязан к пользователю {user.username}")
-                send_telegram_notification(chat_id, f"✅ Ваш Telegram аккаунт успешно привязан к TaskFlow!")
+                send_telegram_notification(chat_id, f"✅ Ваш Telegram аккаунт успешно привязан к ProdBoost!")
             else:
                 send_telegram_notification(chat_id, "❌ Пользователь не найден.")
         else:
@@ -250,7 +337,7 @@ def create_task(current_user):
     new_task = Task(
         title=data['title'].strip(),
         description=data.get('description', ''),
-        due_date=data.get('due_date'),  # ← ДОБАВЛЕНО
+        due_date=data.get('due_date'),
         user_id=current_user.id
     )
     db.session.add(new_task)
@@ -259,7 +346,7 @@ def create_task(current_user):
     # 🐙 Создаём GitHub Issue
     issue_number = create_github_issue(
         title=f"Task: {new_task.title}",
-        body=f"Description: {new_task.description}\nDue Date: {new_task.due_date}\nCreated via TaskFlow at {new_task.created_at}"
+        body=f"Description: {new_task.description}\nDue Date: {new_task.due_date}\nCreated via ProdBoost at {new_task.created_at}"
     )
     if issue_number:
         new_task.github_issue_number = issue_number
@@ -320,3 +407,4 @@ def health_check():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
