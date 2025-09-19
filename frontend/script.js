@@ -2,7 +2,7 @@ class TaskFlowApp {
     constructor() {
         this.token = localStorage.getItem('taskflow_token') || null;
         this.userId = localStorage.getItem('taskflow_user_id') || null;
-        this.apiUrl = 'http://192.168.50.94:5000';
+        this.apiUrl = 'https://api.prodboost.ru';
         this.translations = {
             ru: {
                 title: "ProdBoost — Управление задачами",
@@ -72,6 +72,20 @@ class TaskFlowApp {
     }
 
     init() {
+        // Проверяем токен в URL (после входа через Telegram)
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        const userId = urlParams.get('user_id');
+
+        if (token && userId) {
+            this.token = token;
+            this.userId = userId;
+            localStorage.setItem('taskflow_token', token);
+            localStorage.setItem('taskflow_user_id', userId);
+            // Очищаем URL от параметров
+            window.history.replaceState({}, document.title, "/");
+        }
+
         if (this.token) {
             this.showApp();
             this.loadTasks();
@@ -85,9 +99,7 @@ class TaskFlowApp {
 
     applyTranslations() {
         const t = this.translations[this.currentLanguage];
-        // Обновляем заголовок
         document.title = t.title;
-        // Обновляем тексты в интерфейсе — ТОЛЬКО если элемент существует
         const elements = document.querySelectorAll('[data-i18n]');
         elements.forEach(el => {
             const key = el.getAttribute('data-i18n');
@@ -189,11 +201,18 @@ class TaskFlowApp {
 
     showAuth() {
         document.getElementById('authSection').style.display = 'block';
+        document.getElementById('forgotPasswordSection').style.display = 'none';
         document.getElementById('appSection').style.display = 'none';
+    }
+
+    showForgotPassword() {
+        document.getElementById('authSection').style.display = 'none';
+        document.getElementById('forgotPasswordSection').style.display = 'block';
     }
 
     showApp() {
         document.getElementById('authSection').style.display = 'none';
+        document.getElementById('forgotPasswordSection').style.display = 'none';
         document.getElementById('appSection').style.display = 'block';
         this.showSection('tasks');
     }
@@ -387,98 +406,3 @@ class TaskFlowApp {
                 </div>
             `;
             container.appendChild(card);
-        });
-    }
-
-    // Настройки
-    loadUserSettings() {
-        const savedTheme = localStorage.getItem('taskflow_theme') || 'light';
-        this.setTheme(savedTheme);
-        
-        const savedNotifications = localStorage.getItem('taskflow_desktop_notifications') === 'true';
-        const checkbox = document.getElementById('desktopNotifications');
-        if (checkbox) {
-            checkbox.checked = savedNotifications;
-            this.updateNotificationStatus(savedNotifications);
-        }
-        
-        const savedLanguage = localStorage.getItem('taskflow_language') || 'ru';
-        const select = document.getElementById('languageSelect');
-        if (select) {
-            select.value = savedLanguage;
-        }
-        this.currentLanguage = savedLanguage;
-        this.applyTranslations();
-    }
-
-    setTheme(theme) {
-        document.body.className = `theme-${theme}`;
-        localStorage.setItem('taskflow_theme', theme);
-        // Обновляем активную кнопку
-        document.querySelectorAll('.theme-btn').forEach(btn => {
-            btn.style.opacity = '0.5';
-        });
-        document.querySelector(`.theme-btn.${theme}`)?.style.opacity = '1';
-    }
-
-    toggleDesktopNotifications() {
-        const checkbox = document.getElementById('desktopNotifications');
-        const statusEl = document.getElementById('notificationStatus');
-        if (!checkbox || !statusEl) return;
-
-        if (checkbox.checked && Notification.permission !== "granted") {
-            Notification.requestPermission().then(permission => {
-                if (permission === "granted") {
-                    this.showToast('✅ Desktop-уведомления разрешены');
-                    this.updateNotificationStatus(true);
-                } else {
-                    checkbox.checked = false;
-                    this.showToast('❌ Уведомления заблокированы');
-                    this.updateNotificationStatus(false);
-                }
-            });
-        } else {
-            this.updateNotificationStatus(checkbox.checked);
-        }
-        localStorage.setItem('taskflow_desktop_notifications', checkbox.checked);
-    }
-
-    updateNotificationStatus(isEnabled) {
-        const statusEl = document.getElementById('notificationStatus');
-        if (!statusEl) return;
-
-        const t = this.translations[this.currentLanguage];
-        statusEl.textContent = isEnabled ? t.notificationsEnabled : t.notificationsDisabled;
-        statusEl.style.color = isEnabled ? '#28a745' : '#dc3545';
-    }
-
-    changeLanguage() {
-        const select = document.getElementById('languageSelect');
-        if (!select) return;
-
-        const lang = select.value;
-        this.currentLanguage = lang;
-        localStorage.setItem('taskflow_language', lang);
-        this.applyTranslations();
-        this.showToast(`✅ Язык изменён на ${lang === 'ru' ? 'Русский' : 'English'}`);
-    }
-
-    showToast(message) {
-        const toast = document.createElement('div');
-        toast.className = 'toast';
-        toast.textContent = message;
-        document.body.appendChild(toast);
-        setTimeout(() => {
-            toast.remove();
-        }, 3000);
-    }
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    const app = new TaskFlowApp();
-
-    window.login = function() { app.login(); };
-    window.register = function() { app.register(); };
-    window.logout = function() { app.logout(); };
-    window.copyTelegramCommand = function() { app.copyTelegramCommand(); };
-});

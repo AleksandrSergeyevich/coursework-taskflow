@@ -17,6 +17,33 @@
                 <button onclick="login()" data-i18n="authLogin">Войти</button>
                 <button onclick="register()" data-i18n="authRegister">Регистрация</button>
                 <p id="authMessage"></p>
+
+                <!-- Telegram Login Widget -->
+                <div class="telegram-login">
+                    <h3 data-i18n="telegramTitle">Войти через Telegram</h3>
+                    <script async src="https://telegram.org/js/telegram-widget.js?22" 
+                        data-telegram-login="ProdBoostAuthBot" 
+                        data-size="large" 
+                        data-auth-url="https://prodboost.ru/api/telegram-login" 
+                        data-request-access="write">
+                    </script>
+                </div>
+
+                <button onclick="app.showForgotPassword()" style="margin-top: 10px;">Забыли пароль?</button>
+            </div>
+        </div>
+
+        <!-- Форма восстановления пароля -->
+        <div id="forgotPasswordSection" class="auth-section" style="display: none;">
+            <div class="auth-form">
+                <h3>🔑 Восстановление пароля</h3>
+                <input type="text" id="resetIdentifier" placeholder="Имя пользователя или Telegram ID">
+                <button onclick="app.sendResetCode()">Отправить код</button>
+                <input type="text" id="resetCode" placeholder="Код из Telegram">
+                <input type="password" id="newPassword" placeholder="Новый пароль">
+                <button onclick="app.resetPassword()">Сбросить пароль</button>
+                <p id="resetMessage"></p>
+                <button onclick="app.showLogin()">← Назад к входу</button>
             </div>
         </div>
 
