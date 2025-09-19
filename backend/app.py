@@ -13,8 +13,7 @@ from functools import wraps
 import requests
 import hashlib
 import hmac
-import random
-import string
+import secrets
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +32,9 @@ TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
 GITHUB_REPO = "AleksandrSergeyevich/coursework-taskflow"
 
+# Временное хранилище токенов восстановления (в продакшене — Redis или БД)
+reset_tokens = {}
+
 db = SQLAlchemy(app)
 
 # Модель пользователя
@@ -40,8 +42,9 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
-    telegram_chat_id = db.Column(db.String(50), nullable=True)
-    reset_code = db.Column(db.String(6), nullable=True)  # Для восстановления пароля
+    email = db.Column(db.String(120), unique=True, nullable=True)  # Для восстановления пароля
+    telegram_chat_id = db.Column(db.String(50), nullable=True)    # Для уведомлений
+    telegram_id = db.Column(db.String(50), nullable=True)         # Для входа через Telegram Login Widget
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -103,7 +106,7 @@ def initialize_once():
         db.create_all()
         # Создаём тестового пользователя, если нет
         if not User.query.first():
-            test_user = User(username='admin')
+            test_user = User(username='admin', email='admin@example.com')
             test_user.set_password('admin')
             db.session.add(test_user)
             db.session.commit()
@@ -119,7 +122,7 @@ def generate_token(user_id):
     }, app.config['SECRET_KEY'], algorithm="HS256")
     return token
 
-# Исправленный декоратор
+# Декоратор для проверки JWT
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -131,7 +134,8 @@ def token_required(f):
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
             current_user = User.query.get(data['user_id'])
-        except:
+        except Exception as e:
+            logger.error(f"Token decode error: {e}")
             return jsonify({'message': 'Token is invalid!'}), 401
         return f(current_user, *args, **kwargs)
     return decorated
@@ -184,11 +188,9 @@ def register():
     data = request.get_json()
     if not data or not data.get('username') or not data.get('password'):
         return jsonify({"error": "Username and password required"}), 400
-
     if User.query.filter_by(username=data['username']).first():
         return jsonify({"error": "User already exists"}), 400
-
-    new_user = User(username=data['username'])
+    new_user = User(username=data['username'], email=data.get('email'))
     new_user.set_password(data['password'])
     db.session.add(new_user)
     db.session.commit()
@@ -201,91 +203,90 @@ def login():
     user = User.query.filter_by(username=data['username']).first()
     if not user or not user.check_password(data['password']):
         return jsonify({"error": "Invalid credentials"}), 401
-
     token = generate_token(user.id)
     return jsonify({"token": token, "user_id": user.id})
 
-## Telegram Login Widget
-@app.route('/api/telegram-login', methods=['POST'])
-def telegram_login():
-    data = request.form.to_dict()
-    hash_ = data.pop('hash', None)
-
-    if not hash_:
-        return jsonify({"error": "Invalid request"}), 400
-
-    # Проверка подписи (защита от подделки)
-    secret_key = hashlib.sha256(TELEGRAM_BOT_TOKEN.encode()).digest()
-    check_string = '\n'.join(f'{k}={v}' for k, v in sorted(data.items()))
-    hmac_hash = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
-
-    if hmac_hash != hash_:
+## Telegram Login Widget — авторизация
+@app.route('/auth/telegram', methods=['GET'])
+def auth_telegram():
+    data = request.args
+    # Проверяем подпись (hash) — чтобы убедиться, что данные от Telegram
+    check_hash = data.get('hash')
+    if not check_hash:
+        logger.error("❌ Telegram hash is missing")
         return jsonify({"error": "Invalid hash"}), 400
-
+    # Удаляем hash из данных для проверки
+    data_dict = dict(data)
+    del data_dict['hash']
+    # Сортируем параметры по ключу
+    sorted_data = sorted(data_dict.items(), key=lambda x: x[0])
+    # Создаём строку в формате "key=<value>"
+    data_check_string = "\n".join([f"{k}={v}" for k, v in sorted_data])
+    # Создаём секретный ключ из токена бота
+    secret_key = hmac.new(key=b"WebAppData", msg=TELEGRAM_BOT_TOKEN.encode(), digestmod=hashlib.sha256).digest()
+    # Создаём хеш для проверки
+    _hash = hmac.new(key=secret_key, msg=data_check_string.encode(), digestmod=hashlib.sha256).hexdigest()
+    # Сравниваем хеши
+    if _hash != check_hash:
+        logger.error("❌ Invalid Telegram hash")
+        return jsonify({"error": "Invalid hash"}), 400
     # Получаем данные пользователя
-    telegram_id = data['id']
+    telegram_id = data.get('id')
     username = data.get('username', f"user_{telegram_id}")
-    first_name = data.get('first_name', "User")
-
+    first_name = data.get('first_name', "")
     # Находим или создаём пользователя
-    user = User.query.filter_by(telegram_chat_id=str(telegram_id)).first()
+    user = User.query.filter_by(telegram_id=str(telegram_id)).first()
     if not user:
-        user = User(username=username, telegram_chat_id=str(telegram_id))
-        user.set_password(str(telegram_id))  # Временный пароль
+        user = User(username=username, telegram_id=str(telegram_id))
+        user.set_password(str(telegram_id))  # Генерируем пароль из telegram_id
         db.session.add(user)
         db.session.commit()
-        logger.info(f"✅ Создан пользователь через Telegram: {username}")
-
+        logger.info(f"✅ Created new user via Telegram: {username}")
     # Генерируем JWT-токен
     token = generate_token(user.id)
-    return redirect(f"https://prodboost.ru/?token={token}&user_id={user.id}")
+    # Перенаправляем пользователя на фронтенд с токеном
+    return redirect(f"https://prodboost.ru?token={token}&user_id={user.id}")
 
-## Восстановление пароля — отправка кода
+## Запрос на восстановление пароля
 @app.route('/forgot-password', methods=['POST'])
 def forgot_password():
     data = request.get_json()
-    identifier = data.get('identifier')  # username или telegram_chat_id
-
-    user = User.query.filter(
-        (User.username == identifier) | (User.telegram_chat_id == identifier)
-    ).first()
-
+    email = data.get('email')
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+    user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        # Не раскрываем, существует ли email — для безопасности
+        return jsonify({"message": "If email exists, reset link was sent"}), 200
+    # Генерируем токен
+    token = secrets.token_urlsafe(32)
+    reset_tokens[token] = user.id
+    # В реальном проекте — отправляй письмо через SMTP
+    # Пока — просто логируем ссылку
+    reset_url = f"https://prodboost.ru/reset-password?token={token}"
+    logger.info(f"🔑 Password reset link for {email}: {reset_url}")
+    # Здесь можно отправить email — через smtplib или requests к API (SendGrid, Mailgun)
+    return jsonify({"message": "If email exists, reset link was sent"}), 200
 
-    # Генерируем 6-значный код
-    reset_code = ''.join(random.choices(string.digits, k=6))
-    user.reset_code = reset_code
-    db.session.commit()
-
-    # Отправляем код в Telegram
-    if user.telegram_chat_id:
-        send_telegram_notification(
-            user.telegram_chat_id,
-            f"🔑 Код восстановления пароля: {reset_code}\nНикому не сообщайте этот код!"
-        )
-
-    return jsonify({"message": "Reset code sent to your Telegram"}), 200
-
-## Восстановление пароля — сброс
+## Сброс пароля
 @app.route('/reset-password', methods=['POST'])
 def reset_password():
     data = request.get_json()
-    reset_code = data.get('reset_code')
+    token = data.get('token')
     new_password = data.get('new_password')
-
-    if not reset_code or not new_password:
-        return jsonify({"error": "Reset code and new password required"}), 400
-
-    user = User.query.filter_by(reset_code=reset_code).first()
+    if not token or not new_password:
+        return jsonify({"error": "Token and new_password are required"}), 400
+    user_id = reset_tokens.get(token)
+    if not user_id:
+        return jsonify({"error": "Invalid or expired token"}), 400
+    user = User.query.get(user_id)
     if not user:
-        return jsonify({"error": "Invalid reset code"}), 400
-
+        return jsonify({"error": "User not found"}), 404
     user.set_password(new_password)
-    user.reset_code = None
     db.session.commit()
-
-    return jsonify({"message": "Password reset successfully"}), 200
+    # Удаляем токен
+    del reset_tokens[token]
+    return jsonify({"message": "Password reset successful"}), 200
 
 ## Telegram Webhook
 @app.route('/telegram-webhook', methods=['POST'])
@@ -293,11 +294,9 @@ def telegram_webhook():
     data = request.json
     if not data or 'message' not in data:
         return jsonify({"status": "ignored"})
-
     message = data['message']
     chat_id = str(message['chat']['id'])
     text = message.get('text', '')
-
     if text.startswith('/start'):
         parts = text.split()
         if len(parts) > 1 and parts[1].isdigit():
@@ -312,7 +311,6 @@ def telegram_webhook():
                 send_telegram_notification(chat_id, "❌ Пользователь не найден.")
         else:
             send_telegram_notification(chat_id, "ℹ️ Используйте команду в формате: /start <user_id>")
-    
     return jsonify({"status": "ok"})
 
 ## Получить все задачи пользователя
@@ -333,7 +331,6 @@ def create_task(current_user):
     data = request.get_json()
     if not data or 'title' not in data or not isinstance(data['title'], str) or not data['title'].strip():
         return jsonify({"error": "Title is required and must be a non-empty string"}), 400
-
     new_task = Task(
         title=data['title'].strip(),
         description=data.get('description', ''),
@@ -342,7 +339,6 @@ def create_task(current_user):
     )
     db.session.add(new_task)
     db.session.commit()
-
     # 🐙 Создаём GitHub Issue
     issue_number = create_github_issue(
         title=f"Task: {new_task.title}",
@@ -351,7 +347,6 @@ def create_task(current_user):
     if issue_number:
         new_task.github_issue_number = issue_number
         db.session.commit()
-
     return jsonify(new_task.to_dict()), 201
 
 ## Обновить статус задачи (+ Telegram уведомление)
@@ -361,21 +356,17 @@ def update_task_status(current_user, task_id):
     task = Task.query.filter_by(id=task_id, user_id=current_user.id).first()
     if not task:
         return jsonify({"error": "Task not found or access denied"}), 404
-
     data = request.get_json()
     if 'status' not in data or data['status'] not in ['Создана', 'В работе', 'Завершена']:
         return jsonify({"error": "Invalid status"}), 400
-
     old_status = task.status
     task.status = data['status']
     db.session.commit()
-
     # 🤖 Отправляем Telegram-уведомление
     user = User.query.get(current_user.id)
     if user.telegram_chat_id:
-        message = f"✅ Задача обновлена!\n\n📌 {task.title}\n🔄 Статус: {old_status} → {task.status}"
+        message = f"✅ Задача обновлена!\n📌 {task.title}\n🔄 Статус: {old_status} → {task.status}"
         send_telegram_notification(user.telegram_chat_id, message)
-
     return jsonify(task.to_dict())
 
 ## Удалить задачу
@@ -407,4 +398,3 @@ def health_check():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-

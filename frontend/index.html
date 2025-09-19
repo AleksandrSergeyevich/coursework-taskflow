@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title data-i18n="title">ProdBoost — Управление задачами</title>
+    <title>ProdBoost — Управление задачами</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="theme-light">
@@ -11,55 +11,45 @@
         <!-- Форма авторизации -->
         <div id="authSection" class="auth-section">
             <div class="auth-form">
-                <h2 data-i18n="authTitle">🚀 ProdBoost</h2>
+                <h2>🚀 ProdBoost</h2>
                 <input type="text" id="username" placeholder="Имя пользователя" required>
                 <input type="password" id="password" placeholder="Пароль" required>
                 <button onclick="login()" data-i18n="authLogin">Войти</button>
                 <button onclick="register()" data-i18n="authRegister">Регистрация</button>
+                <button onclick="showForgotPassword()" data-i18n="forgotPassword">Забыли пароль?</button>
                 <p id="authMessage"></p>
-
                 <!-- Telegram Login Widget -->
-                <div class="telegram-login">
-                    <h3 data-i18n="telegramTitle">Войти через Telegram</h3>
+                <div style="margin: 20px 0;">
                     <script async src="https://telegram.org/js/telegram-widget.js?22" 
-                        data-telegram-login="ProdBoostAuthBot" 
-                        data-size="large" 
-                        data-auth-url="https://prodboost.ru/api/telegram-login" 
-                        data-request-access="write">
+                            data-telegram-login="ProdBoostAuthBot" 
+                            data-size="large" 
+                            data-auth-url="https://api.prodboost.ru/auth/telegram" 
+                            data-request-access="write">
                     </script>
                 </div>
-
-                <button onclick="app.showForgotPassword()" style="margin-top: 10px;">Забыли пароль?</button>
             </div>
         </div>
-
         <!-- Форма восстановления пароля -->
         <div id="forgotPasswordSection" class="auth-section" style="display: none;">
             <div class="auth-form">
-                <h3>🔑 Восстановление пароля</h3>
-                <input type="text" id="resetIdentifier" placeholder="Имя пользователя или Telegram ID">
-                <button onclick="app.sendResetCode()">Отправить код</button>
-                <input type="text" id="resetCode" placeholder="Код из Telegram">
-                <input type="password" id="newPassword" placeholder="Новый пароль">
-                <button onclick="app.resetPassword()">Сбросить пароль</button>
+                <h2 data-i18n="resetPassword">🔑 Восстановление пароля</h2>
+                <input type="email" id="resetEmail" placeholder="Email" required>
+                <button onclick="sendResetLink()" data-i18n="resetSendLink">Отправить ссылку</button>
+                <button onclick="showAuth()">Назад</button>
                 <p id="resetMessage"></p>
-                <button onclick="app.showLogin()">← Назад к входу</button>
             </div>
         </div>
-
         <!-- Основной интерфейс -->
         <div id="appSection" class="app-section" style="display: none;">
             <header>
-                <h1 data-i18n="title">🚀 ProdBoost</h1>
+                <h1>🚀 ProdBoost</h1>
                 <button onclick="logout()" data-i18n="logout" class="logout-btn">Выйти</button>
             </header>
-
             <!-- Меню навигации -->
             <nav class="nav-menu">
                 <button onclick="app.showSection('tasks')" class="active" data-i18n="tasks">📋 Задачи</button>
                 <button onclick="app.showSection('settings')" data-i18n="settings">⚙️ Настройки</button>
             </nav>
-
             <!-- Секция задач -->
             <div id="tasksSection" class="section active">
                 <div class="controls">
@@ -71,24 +61,20 @@
                         <option value="Завершена">Завершена</option>
                     </select>
                 </div>
-
                 <div class="task-form">
                     <input type="text" id="taskTitle" placeholder="Название задачи" required data-i18n="taskFormTitle">
                     <textarea id="taskDescription" placeholder="Описание (опционально)" data-i18n="taskFormDescription"></textarea>
                     <input type="date" id="taskDueDate" placeholder="Дата выполнения" data-i18n="taskFormDueDate">
                     <button onclick="app.addTask()" data-i18n="taskFormButton">Добавить задачу</button>
                 </div>
-
                 <div id="tasksContainer" class="tasks-container">
                     <h2 data-i18n="tasksHeader">Ваши задачи</h2>
                     <div id="tasksList"></div>
                 </div>
             </div>
-
             <!-- Секция настроек -->
             <div id="settingsSection" class="section">
                 <h2 data-i18n="settings">⚙️ Настройки</h2>
-                
                 <!-- Telegram -->
                 <div class="settings-group">
                     <h3 data-i18n="telegramTitle">📲 Telegram</h3>
@@ -97,7 +83,6 @@
                     <button onclick="app.copyTelegramCommand()" data-i18n="telegramCopy">📋 Скопировать</button>
                     <p id="telegramStatus"></p>
                 </div>
-
                 <!-- Тема -->
                 <div class="settings-group">
                     <h3 data-i18n="themeTitle">🎨 Тема интерфейса</h3>
@@ -107,7 +92,6 @@
                         <button onclick="app.setTheme('blue')" class="theme-btn blue">Синяя</button>
                     </div>
                 </div>
-
                 <!-- Уведомления -->
                 <div class="settings-group">
                     <h3 data-i18n="notificationsTitle">🔔 Desktop-уведомления</h3>
@@ -119,7 +103,6 @@
                         <span id="notificationStatus">Отключены</span>
                     </div>
                 </div>
-
                 <!-- Язык -->
                 <div class="settings-group">
                     <h3 data-i18n="languageTitle">🌐 Язык интерфейса</h3>
