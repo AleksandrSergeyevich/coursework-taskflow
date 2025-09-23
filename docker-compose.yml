@@ -1,5 +1,4 @@
 version: '3.8'
-
 services:
   frontend:
     build: ./frontend
@@ -22,14 +21,17 @@ services:
 
   db:
     image: postgres:15
-    env_file: .env
+    environment:
+      POSTGRES_DB: taskflow_db
+      POSTGRES_USER: taskflow_user
+      POSTGRES_PASSWORD: taskflow_pass
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - taskflow-net
 
 volumes:
-  postgres_data: {}
+  postgres_data:
 
 networks:
   taskflow-net:

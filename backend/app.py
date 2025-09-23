@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect
+from flask import Flask, request, jsonify, redirect, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -18,6 +18,10 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+# Flask-Admin
+from flask_admin import Admin
+from flask_admin.contrib.sqla import ModelView
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -27,6 +31,9 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
+
+# Secret key for sessions (used by Flask-Admin)
+app.secret_key = os.environ.get('SECRET_KEY', 'fallback-secret-key-for-sessions')
 
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'fallback-secret-key')
@@ -223,7 +230,60 @@ def create_github_issue(title, body):
         logger.error(f"❌ GitHub error: {e}")
         return None
 
-# Routes
+# === Flask-Admin Configuration ===
+class AdminModelView(ModelView):
+    def is_accessible(self):
+        # Проверяем наличие JWT токена в заголовке Authorization
+        token = request.headers.get('Authorization')
+        if token:
+            try:
+                token = token.split(" ")[1]
+                data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+                user = User.query.get(data['user_id'])
+                # Разрешаем доступ, если username == 'admin'
+                return user and user.username == 'admin'
+            except:
+                pass
+        # Также проверяем сессию (для ручного входа в админку)
+        return session.get('is_admin', False)
+
+    def inaccessible_callback(self, name, **kwargs):
+        # Перенаправляем на страницу входа, если доступ запрещён
+        return redirect('/admin/login')
+
+# Создаём админ-панель
+admin = Admin(app, name='ProdBoost Admin', template_mode='bootstrap4')
+admin.add_view(AdminModelView(User, db.session, name='Пользователи'))
+admin.add_view(AdminModelView(Task, db.session, name='Задачи'))
+
+# Эндпоинт для входа в админку (ручной вход)
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password) and user.username == 'admin':
+            session['is_admin'] = True
+            return redirect('/admin')
+        else:
+            return 'Invalid credentials', 401
+    return '''
+        <!DOCTYPE html>
+        <html>
+        <head><title>Admin Login</title></head>
+        <body>
+            <h2>🔐 Вход в админ-панель</h2>
+            <form method="post">
+                <input type="text" name="username" placeholder="Username" required><br><br>
+                <input type="password" name="password" placeholder="Password" required><br><br>
+                <input type="submit" value="Login">
+            </form>
+        </body>
+        </html>
+    '''
+
+# === Routes ===
 
 ## Проверка уникальности username
 @app.route('/check-username', methods=['POST'])
@@ -306,34 +366,25 @@ def auth_telegram():
         logger.error("❌ Telegram hash is missing")
         return jsonify({"error": "Invalid hash"}), 400
 
-    # Создаем копию данных без hash
     data_dict = dict(data)
     data_dict.pop('hash', None)
 
-    # Сортируем параметры по ключу
     sorted_data = sorted(data_dict.items(), key=lambda x: x[0])
-    # Создаём строку в формате "key=<value>"
     data_check_string = "\n".join([f"{k}={v}" for k, v in sorted_data])
 
-    # Создаём секретный ключ — ХЕШ SHA256 от строки "WebAppData"
     secret_key = hashlib.sha256(b"WebAppData").digest()
-
-    # Создаём хеш для проверки — HMAC-SHA256 от data_check_string с секретным ключом
     _hash = hmac.new(key=secret_key, msg=data_check_string.encode(), digestmod=hashlib.sha256).hexdigest()
 
-    # Сравниваем хеши
     if _hash != check_hash:
         logger.error("❌ Invalid Telegram hash")
         logger.error(f"Calculated: {_hash}")
         logger.error(f"Received:   {check_hash}")
         return jsonify({"error": "Invalid hash"}), 400
 
-    # Получаем данные пользователя
     telegram_id = data.get('id')
     username = data.get('username', f"user_{telegram_id}")
     first_name = data.get('first_name', "")
 
-    # Находим или создаём пользователя
     user = User.query.filter_by(telegram_id=str(telegram_id)).first()
     if not user:
         user = User(username=username, telegram_id=str(telegram_id), email=f"{username}@telegram.local")
@@ -342,10 +393,7 @@ def auth_telegram():
         db.session.commit()
         logger.info(f"✅ Created new user via Telegram: {username}")
 
-    # Генерируем JWT-токен
     token = generate_token(user.id)
-
-    # Перенаправляем пользователя на фронтенд с токеном
     return redirect(f"https://prodboost.ru?token={token}&user_id={user.id}")
 
 ## Forgot Password
@@ -416,7 +464,7 @@ def reset_password():
 def telegram_webhook():
     try:
         data = request.json
-        if not data or 'message' not in data:  # ← ИСПРАВЛЕНО: добавлено `data`
+        if not data or 'message' not in data:
             return jsonify({"status": "ignored"})
         
         message = data['message']
