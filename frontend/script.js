@@ -384,7 +384,6 @@ class TaskFlowApp {
         `;
     }
 
-    // === Задачи и настройки (без изменений) ===
     updateTelegramCommand() {
         const input = document.getElementById('telegramCommand');
         if (input && this.userId) {
@@ -615,7 +614,6 @@ class TaskFlowApp {
 document.addEventListener('DOMContentLoaded', function() {
     try {
         window.app = new TaskFlowApp();
-        // Глобальные функции — только после создания app
         window.login = () => app.login();
         window.showRegisterStep1 = () => app.showRegisterStep1();
         window.nextToStep2 = () => app.nextToStep2();
