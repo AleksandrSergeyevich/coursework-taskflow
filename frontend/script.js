@@ -153,7 +153,79 @@ class TaskFlowApp {
         });
     }
 
-    // === Авторизация ===
+    // === Web3 / MetaMask ===
+    async connectWallet() {
+        if (typeof window.ethereum === 'undefined') {
+            this.showToast('❌ Установите MetaMask!');
+            return;
+        }
+        try {
+            await window.ethereum.request({ method: 'eth_requestAccounts' });
+            const provider = new ethers.providers.Web3Provider(window.ethereum);
+            const signer = provider.getSigner();
+            const address = await signer.getAddress();
+
+            const message = `Sign to link wallet to ProdBoost\nUser ID: ${this.userId}`;
+            const signature = await signer.signMessage(message);
+
+            const response = await fetch(`${this.apiUrl}/user/link-wallet`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.token}`
+                },
+                body: JSON.stringify({ address, signature, message })
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Ошибка привязки');
+            }
+
+            this.showToast('✅ Кошелёк привязан!');
+            this.updateWalletStatus(data.eth_address);
+        } catch (err) {
+            console.error('MetaMask error:', err);
+            this.showToast(`❌ ${err.message}`);
+        }
+    }
+
+    updateWalletStatus(address) {
+        const statusEl = document.getElementById('walletStatus');
+        if (!statusEl) return;
+        if (address) {
+            statusEl.innerHTML = `
+                <p><strong>Адрес:</strong> <code>${address}</code></p>
+                <button onclick="app.copyAddress()">📋 Скопировать</button>
+            `;
+        } else {
+            statusEl.innerHTML = '<p>Кошелёк не привязан</p>';
+        }
+    }
+
+    async copyAddress() {
+        const address = document.querySelector('#walletStatus code')?.textContent;
+        if (address) {
+            await navigator.clipboard.writeText(address);
+            this.showToast('✅ Адрес скопирован!');
+        }
+    }
+
+    async loadWalletStatus() {
+        try {
+            const response = await fetch(`${this.apiUrl}/user/profile`, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+            if (response.ok) {
+                const profile = await response.json();
+                this.updateWalletStatus(profile.eth_address);
+            }
+        } catch (err) {
+            console.warn('Не удалось загрузить профиль');
+        }
+    }
+
+    // === Авторизация и остальные методы (без изменений) ===
     async login() {
         const usernameEl = document.getElementById('username');
         const passwordEl = document.getElementById('password');
@@ -347,6 +419,8 @@ class TaskFlowApp {
 
         if (sectionId === 'stats') {
             this.loadStats();
+        } else if (sectionId === 'settings') {
+            this.loadWalletStatus();
         }
     }
 
@@ -384,6 +458,7 @@ class TaskFlowApp {
         `;
     }
 
+    // === Задачи и настройки (остальное без изменений) ===
     updateTelegramCommand() {
         const input = document.getElementById('telegramCommand');
         if (input && this.userId) {
@@ -531,7 +606,7 @@ class TaskFlowApp {
                 </div>
                 <div class="task-actions">
                     ${task.status !== 'В работе' ? 
-                      `<button class="btn-start" onclick="app.updateTaskStatus(${task.id}, 'В работе')">▶️ В работу</button>` :
+                      `<button class="btn-start" onclick="app.updateTaskStatus(${task.id}, 'В работу')">▶️ В работу</button>` :
                       `<button class="btn-complete" onclick="app.updateTaskStatus(${task.id}, 'Завершена')">✅ Завершить</button>`}
                     <button class="btn-delete" onclick="app.deleteTask(${task.id})">🗑️ Удалить</button>
                 </div>`;

@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="title">ProdBoost — Управление задачами</title>
   <link rel="stylesheet" href="style.css">
+  <!-- Ethers.js через jsDelivr (работает везде) -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.0/dist/ethers.umd.min.js"></script>
 </head>
 <body class="theme-light">
   <div class="app-container">
@@ -122,6 +124,16 @@
           <input type="text" id="telegramCommand" readonly placeholder="Команда появится после входа">
           <button onclick="app.copyTelegramCommand()" data-i18n="telegramCopy">📋 Скопировать</button>
           <p id="telegramStatus"></p>
+        </div>
+
+        <!-- Web3 / MetaMask -->
+        <div class="settings-group">
+          <h3>🔗 Web3 Кошелёк</h3>
+          <p>Привяжите Ethereum-кошелёк для получения Prod Boost Coin (PBC).</p>
+          <div id="walletStatus">
+            <!-- Статус подгрузится динамически -->
+          </div>
+          <button id="connectWalletBtn" onclick="app.connectWallet()">Подключить MetaMask</button>
         </div>
 
         <!-- Тема -->

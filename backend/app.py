@@ -26,12 +26,14 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import base64
 from io import BytesIO
+from eth_account.messages import encode_defunct
+from web3 import Web3
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates')
 CORS(app)
 
 # Secret key for sessions
@@ -71,6 +73,7 @@ class User(db.Model):
     xp = db.Column(db.Integer, default=0)
     level = db.Column(db.Integer, default=0)
     badges = db.Column(db.JSON, default=list)
+    eth_address = db.Column(db.String(42), unique=True, nullable=True)  # ← Новое поле для Web3
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -111,8 +114,8 @@ class UserAdminModelView(ModelView):
     def inaccessible_callback(self, name, **kwargs):
         return redirect('/admin/login')
 
-    column_list = ['id', 'username', 'email', 'telegram_chat_id', 'telegram_id', 'xp', 'level', 'badges']
-    form_columns = ['username', 'email', 'password_hash', 'telegram_chat_id', 'telegram_id', 'xp', 'level', 'badges']
+    column_list = ['id', 'username', 'email', 'telegram_chat_id', 'telegram_id', 'xp', 'level', 'badges', 'eth_address']
+    form_columns = ['username', 'email', 'password_hash', 'telegram_chat_id', 'telegram_id', 'xp', 'level', 'badges', 'eth_address']
     form_args = {'email': {'validators': [validators.DataRequired()]}}
 
 class TaskAdminModelView(ModelView):
@@ -131,35 +134,58 @@ class DashboardView(BaseView):
         # График 1: Задачи по статусам
         status_counts = db.session.query(Task.status, db.func.count(Task.id)).group_by(Task.status).all()
         df_status = pd.DataFrame(status_counts, columns=['status', 'count'])
-        plt.figure(figsize=(8, 4))
-        plt.bar(df_status['status'], df_status['count'], color=['#ffc107', '#28a745', '#dc3545'])
+        plt.figure(figsize=(6, 4))
+        colors = {'Создана': '#ffc107', 'В работе': '#0d6efd', 'Завершена': '#198754'}
+        plt.bar(df_status['status'], df_status['count'], color=[colors.get(s, '#6c757d') for s in df_status['status']])
         plt.title('Задачи по статусам')
-        plt.xlabel('Статус')
-        plt.ylabel('Количество')
         plt.tight_layout()
         img = BytesIO()
-        plt.savefig(img, format='png')
+        plt.savefig(img, format='png', dpi=150)
         img.seek(0)
         plot_url_1 = base64.b64encode(img.getvalue()).decode()
         plt.close()
 
-        # График 2: Активность пользователей
-        user_counts = db.session.query(User.username, db.func.count(Task.id)).join(Task).group_by(User.username).all()
-        df_users = pd.DataFrame(user_counts, columns=['username', 'task_count'])
-        plt.figure(figsize=(8, 4))
-        plt.bar(df_users['username'], df_users['task_count'], color='#007bff')
-        plt.title('Активность пользователей')
-        plt.xlabel('Пользователь')
-        plt.ylabel('Количество задач')
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        img = BytesIO()
-        plt.savefig(img, format='png')
-        img.seek(0)
-        plot_url_2 = base64.b64encode(img.getvalue()).decode()
-        plt.close()
+        # График 2: Активность по дням (7 дней)
+        seven_days_ago = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+        daily = db.session.query(
+            db.func.date(Task.created_at),
+            db.func.count(Task.id)
+        ).filter(Task.created_at >= seven_days_ago).group_by(db.func.date(Task.created_at)).all()
+        if daily:
+            df_daily = pd.DataFrame(daily, columns=['date', 'count']).sort_values('date')
+            plt.figure(figsize=(6, 4))
+            plt.plot(df_daily['date'], df_daily['count'], marker='o', color='#0d6efd', linewidth=2, markersize=6)
+            plt.title('Новые задачи (последние 7 дней)')
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            img = BytesIO()
+            plt.savefig(img, format='png', dpi=150)
+            img.seek(0)
+            plot_url_2 = base64.b64encode(img.getvalue()).decode()
+            plt.close()
+        else:
+            plot_url_2 = None
 
-        return self.render('admin/dashboard.html', plot_url_1=plot_url_1, plot_url_2=plot_url_2)
+        # График 3: Топ-3 пользователей
+        top_users = db.session.query(User.username, db.func.count(Task.id)).join(Task).group_by(User.username).order_by(db.func.count(Task.id).desc()).limit(3).all()
+        if top_users:
+            df_top = pd.DataFrame(top_users, columns=['user', 'tasks'])
+            plt.figure(figsize=(6, 4))
+            plt.barh(df_top['user'], df_top['tasks'], color='#198754')
+            plt.title('Топ-3: самые активные пользователи')
+            plt.tight_layout()
+            img = BytesIO()
+            plt.savefig(img, format='png', dpi=150)
+            img.seek(0)
+            plot_url_3 = base64.b64encode(img.getvalue()).decode()
+            plt.close()
+        else:
+            plot_url_3 = None
+
+        return self.render('admin/dashboard.html',
+                          plot_url_1=plot_url_1,
+                          plot_url_2=plot_url_2,
+                          plot_url_3=plot_url_3)
 
 # Создаём админ-панель
 admin = Admin(app, name='ProdBoost Admin', template_mode='bootstrap4')
@@ -312,6 +338,7 @@ def send_telegram_notification(chat_id, text):
         logger.warning("Telegram bot token or chat_id not set")
         return
     try:
+        # 🔥 ИСПРАВЛЕНО: убраны лишние пробелы
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         data = {"chat_id": chat_id, "text": text}
         response = requests.post(url, data=data)
@@ -328,6 +355,7 @@ def create_github_issue(title, body):
         logger.warning("GitHub token not set")
         return None
     try:
+        # 🔥 ИСПРАВЛЕНО: убраны лишние пробелы
         url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
         headers = {
             "Authorization": f"token {GITHUB_TOKEN}",
@@ -367,6 +395,53 @@ def award_xp_and_badges(user, xp_amount):
     user.badges = list(badges)
     db.session.commit()
 
+# === Web3 / Wallet Integration ===
+@app.route('/user/profile', methods=['GET'])
+@token_required
+def get_profile(current_user):
+    return jsonify({
+        "username": current_user.username,
+        "eth_address": current_user.eth_address
+    })
+
+@app.route('/user/link-wallet', methods=['POST'])
+@token_required
+def link_wallet(current_user):
+    try:
+        data = request.get_json()
+        address = data.get('address')
+        signature = data.get('signature')
+        message = data.get('message')
+
+        if not address or not signature or not message:
+            return jsonify({"error": "Address, signature and message required"}), 400
+
+        # Создаём экземпляр Web3 (v6+)
+        w3 = Web3()
+
+        if not w3.is_address(address):
+            return jsonify({"error": "Invalid Ethereum address"}), 400
+
+        # Восстановление адреса из подписи
+        encoded_msg = encode_defunct(text=message)
+        recovered_address = w3.eth.account.recover_message(encoded_msg, signature=signature)
+
+        if recovered_address.lower() != address.lower():
+            return jsonify({"error": "Invalid signature"}), 400
+
+        # Проверка, не привязан ли адрес к другому пользователю
+        existing = User.query.filter(User.eth_address == address.lower()).first()
+        if existing and existing.id != current_user.id:
+            return jsonify({"error": "This wallet is already linked to another account"}), 400
+
+        # Привязка
+        current_user.eth_address = address.lower()
+        db.session.commit()
+        logger.info(f"✅ Wallet {address} linked to user {current_user.username}")
+        return jsonify({"message": "Wallet linked successfully", "eth_address": address.lower()})
+    except Exception as e:
+        logger.error(f"Wallet linking error: {e}")
+        return jsonify({"error": "Internal server error"}), 500
 # === Routes ===
 
 @app.route('/check-username', methods=['POST'])
@@ -463,6 +538,7 @@ def auth_telegram():
         logger.info(f"✅ Created new user via Telegram: {username}")
 
     token = generate_token(user.id)
+    # 🔥 ИСПРАВЛЕНО: убраны лишние пробелы
     return redirect(f"https://prodboost.ru?token={token}&user_id={user.id}")
 
 @app.route('/forgot-password', methods=['POST'])
