@@ -17,7 +17,7 @@ services:
     depends_on:
       - db
     networks:
-      - taskflow-net
+      - taskflow-net   # ← ИСПРАВЛЕНО: два пробела, корректный отступ
 
   db:
     image: postgres:15

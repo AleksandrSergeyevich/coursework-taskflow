@@ -1,0 +1,16 @@
+{% extends 'admin/master.html' %}
+{% block body %}
+    <div class="container">
+        <h2>📊 Дашборд ProdBoost</h2>
+        <div class="row">
+            <div class="col-md-6">
+                <h3>Задачи по статусам</h3>
+                <img src="data:image/png;base64,{{ plot_url_1 }}" class="img-fluid" alt="График статусов">
+            </div>
+            <div class="col-md-6">
+                <h3>Активность пользователей</h3>
+                <img src="data:image/png;base64,{{ plot_url_2 }}" class="img-fluid" alt="График активности">
+            </div>
+        </div>
+    </div>
+{% endblock %}

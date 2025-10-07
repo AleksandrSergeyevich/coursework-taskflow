@@ -1,223 +1,174 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title data-i18n="title">ProdBoost — Управление задачами</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-i18n="title">ProdBoost — Управление задачами</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body class="theme-light">
-    <div class="app-container">
-        <!-- Форма авторизации -->
-        <div id="authSection" class="auth-section">
-            <div class="auth-form">
-                <h2 data-i18n="authTitle">🚀 ProdBoost</h2>
-                <input type="text" id="username" placeholder="Имя пользователя" required data-i18n="[placeholder]authUsername">
-                <input type="password" id="password" placeholder="Пароль" required data-i18n="[placeholder]authPassword">
-                <button onclick="login()" data-i18n="authLogin">Войти</button>
-                <button onclick="showRegisterStep1()" data-i18n="authRegister">Регистрация</button>
-                <button onclick="showForgotPassword()" data-i18n="forgotPassword">Забыли пароль?</button>
-                <p id="authMessage"></p>
-                <!-- Telegram Login Widget -->
-                <div style="margin: 20px 0;">
-                    <h3 data-i18n="telegramTitle">Войти через Telegram</h3>
-                    <script async src="https://telegram.org/js/telegram-widget.js?22" 
-                            data-telegram-login="ProdBoostAuthBot" 
-                            data-size="large" 
-                            data-auth-url="https://api.prodboost.ru/auth/telegram" 
-                            data-request-access="write">
-                    </script>
-                </div>
-            </div>
-        </div>
+  <div class="app-container">
 
-        <!-- Шаг 1 регистрации: Логин и пароль -->
-        <div id="registerStep1Section" class="auth-section" style="display: none;">
-            <div class="auth-form">
-                <h2 data-i18n="registerStep1Title">📝 Шаг 1: Создайте учётную запись</h2>
-                <input type="text" id="registerUsername" placeholder="Имя пользователя" required data-i18n="[placeholder]authUsername">
-                <input type="password" id="registerPassword" placeholder="Пароль" required data-i18n="[placeholder]authPassword">
-                <button onclick="nextToEmailStep()" data-i18n="nextStep">Далее →</button>
-                <button onclick="showAuth()">← Назад</button>
-                <p id="registerStep1Message"></p>
-            </div>
-        </div>
+    <!-- Форма авторизации -->
+    <div id="authSection" class="auth-section">
+      <div class="auth-form">
+        <h2 data-i18n="authTitle">🚀 ProdBoost</h2>
+        <input type="text" id="username" placeholder="Имя пользователя" required data-i18n="[placeholder]authUsername">
+        <input type="password" id="password" placeholder="Пароль" required data-i18n="[placeholder]authPassword">
+        <button onclick="login()" data-i18n="authLogin">Войти</button>
+        <button onclick="showRegisterStep1()" data-i18n="authRegister">Регистрация</button>
+        <button onclick="showForgotPassword()" data-i18n="forgotPassword">Забыли пароль?</button>
+        <p id="authMessage"></p>
 
-        <!-- Шаг 2 регистрации: Email -->
-        <div id="registerStep2Section" class="auth-section" style="display: none;">
-            <div class="auth-form">
-                <h2 data-i18n="registerStep2Title">📧 Шаг 2: Укажите email</h2>
-                <input type="email" id="registerEmail" placeholder="Email" required data-i18n="[placeholder]authEmail">
-                <button onclick="completeRegistration()" data-i18n="completeRegistration">Завершить регистрацию</button>
-                <button onclick="showRegisterStep1()">← Назад</button>
-                <p id="registerStep2Message"></p>
-            </div>
+        <!-- Telegram Login Widget -->
+        <div style="margin: 20px 0;">
+          <h3 data-i18n="telegramTitle">Войти через Telegram</h3>
+          <script async src="https://telegram.org/js/telegram-widget.js?22"
+            data-telegram-login="ProdBoostAuthBot"
+            data-size="large"
+            data-auth-url="https://api.prodboost.ru/auth/telegram"
+            data-request-access="write"></script>
         </div>
-
-        <!-- Форма восстановления пароля -->
-        <div id="forgotPasswordSection" class="auth-section" style="display: none;">
-            <div class="auth-form">
-                <h2 data-i18n="resetPassword">🔑 Восстановление пароля</h2>
-                <input type="email" id="resetEmail" placeholder="Email" required data-i18n="[placeholder]resetEmail">
-                <button onclick="sendResetLink()" data-i18n="resetSendLink">Отправить ссылку</button>
-                <button onclick="showAuth()">Назад</button>
-                <p id="resetMessage"></p>
-            </div>
-        </div>
-
-        <!-- Основной интерфейс -->
-        <div id="appSection" class="app-section" style="display: none;">
-            <header>
-                <h1 data-i18n="title">🚀 ProdBoost</h1>
-                <button onclick="logout()" data-i18n="logout" class="logout-btn">Выйти</button>
-            </header>
-            <!-- Меню навигации -->
-            <nav class="nav-menu">
-                <button onclick="app.showSection('tasks')" class="active" data-i18n="tasks">📋 Задачи</button>
-                <button onclick="app.showSection('settings')" data-i18n="settings">⚙️ Настройки</button>
-            </nav>
-            <!-- Секция задач -->
-            <div id="tasksSection" class="section active">
-                <div class="controls">
-                    <input type="text" id="searchInput" placeholder="Поиск задач..." oninput="app.searchTasks()" data-i18n="[placeholder]taskFormSearch">
-                    <select id="statusFilter" onchange="app.filterTasks()">
-                        <option value="" data-i18n="taskStatusAll">Все статусы</option>
-                        <option value="Создана" data-i18n="taskStatusCreated">Создана</option>
-                        <option value="В работе" data-i18n="taskStatusInProgress">В работе</option>
-                        <option value="Завершена" data-i18n="taskStatusCompleted">Завершена</option>
-                    </select>
-                </div>
-                <div class="task-form">
-                    <input type="text" id="taskTitle" placeholder="Название задачи" required data-i18n="[placeholder]taskFormTitle">
-                    <textarea id="taskDescription" placeholder="Описание (опционально)" data-i18n="[placeholder]taskFormDescription"></textarea>
-                    <input type="date" id="taskDueDate" data-i18n="[placeholder]taskFormDueDate">
-                    <button onclick="app.addTask()" data-i18n="taskFormButton">Добавить задачу</button>
-                </div>
-                <div id="tasksContainer" class="tasks-container">
-                    <h2 data-i18n="tasksHeader">Ваши задачи</h2>
-                    <div id="tasksList"></div>
-                </div>
-            </div>
-            <!-- Секция настроек -->
-            <div id="settingsSection" class="section">
-                <h2 data-i18n="settings">⚙️ Настройки</h2>
-                <!-- Telegram -->
-                <div class="settings-group">
-                    <h3 data-i18n="telegramTitle">📲 Telegram</h3>
-                    <p data-i18n="telegramInstruction">Привяжите Telegram для получения уведомлений:</p>
-                    <input type="text" id="telegramCommand" readonly placeholder="Команда появится после входа">
-                    <button onclick="app.copyTelegramCommand()" data-i18n="telegramCopy">📋 Скопировать</button>
-                    <p id="telegramStatus"></p>
-                </div>
-                <!-- Тема -->
-                <div class="settings-group">
-                    <h3 data-i18n="themeTitle">🎨 Тема интерфейса</h3>
-                    <div class="theme-buttons">
-                        <button onclick="app.setTheme('light')" class="theme-btn light">Светлая</button>
-                        <button onclick="app.setTheme('dark')" class="theme-btn dark">Тёмная</button>
-                        <button onclick="app.setTheme('blue')" class="theme-btn blue">Синяя</button>
-                    </div>
-                </div>
-                <!-- Уведомления -->
-                <div class="settings-group">
-                    <h3 data-i18n="notificationsTitle">🔔 Desktop-уведомления</h3>
-                    <div class="notification-toggle">
-                        <label class="switch">
-                            <input type="checkbox" id="desktopNotifications" onchange="app.toggleDesktopNotifications()">
-                            <span class="slider round"></span>
-                        </label>
-                        <span id="notificationStatus">Отключены</span>
-                    </div>
-                </div>
-                <!-- Язык -->
-                <div class="settings-group">
-                    <h3 data-i18n="languageTitle">🌐 Язык интерфейса</h3>
-                    <select id="languageSelect" onchange="app.changeLanguage()">
-                        <option value="ru">Русский</option>
-                        <option value="en">English</option>
-                    </select>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
 
-    <!-- Резервные глобальные функции -->
-    <script>
-        function login() {
-            if (window.app && typeof app.login === 'function') {
-                app.login();
-            } else {
-                console.warn('App not ready yet, retrying...');
-                setTimeout(login, 100);
-            }
-        }
-        function showRegisterStep1() {
-            if (window.app && typeof app.showRegisterStep1 === 'function') {
-                app.showRegisterStep1();
-            } else {
-                console.warn('App not ready yet, retrying...');
-                setTimeout(showRegisterStep1, 100);
-            }
-        }
-        function nextToEmailStep() {
-            if (window.app && typeof app.nextToEmailStep === 'function') {
-                app.nextToEmailStep();
-            } else {
-                console.warn('App not ready yet, retrying...');
-                setTimeout(nextToEmailStep, 100);
-            }
-        }
-        function completeRegistration() {
-            if (window.app && typeof app.completeRegistration === 'function') {
-                app.completeRegistration();
-            } else {
-                console.warn('App not ready yet, retrying...');
-                setTimeout(completeRegistration, 100);
-            }
-        }
-        function showForgotPassword() {
-            if (window.app && typeof app.showForgotPassword === 'function') {
-                app.showForgotPassword();
-            } else {
-                console.warn('App not ready yet, retrying...');
-                setTimeout(showForgotPassword, 100);
-            }
-        }
-        function sendResetLink() {
-            if (window.app && typeof app.sendResetLink === 'function') {
-                app.sendResetLink();
-            } else {
-                console.warn('App not ready yet, retrying...');
-                setTimeout(sendResetLink, 100);
-            }
-        }
-        function showAuth() {
-            if (window.app && typeof app.showAuth === 'function') {
-                app.showAuth();
-            } else {
-                console.warn('App not ready yet, retrying...');
-                setTimeout(showAuth, 100);
-            }
-        }
-        function logout() {
-            if (window.app && typeof app.logout === 'function') {
-                app.logout();
-            } else {
-                console.warn('App not ready yet, retrying...');
-                setTimeout(logout, 100);
-            }
-        }
-        function copyTelegramCommand() {
-            if (window.app && typeof app.copyTelegramCommand === 'function') {
-                app.copyTelegramCommand();
-            } else {
-                console.warn('App not ready yet, retrying...');
-                setTimeout(copyTelegramCommand, 100);
-            }
-        }
-    </script>
+    <!-- Шаг 1: Регистрация — логин и пароль -->
+    <div id="registerStep1Section" class="auth-section" style="display: none;">
+      <div class="auth-form">
+        <h2 data-i18n="registerStep1Title">📝 Шаг 1: Создайте аккаунт</h2>
+        <input type="text" id="registerUsername" placeholder="Имя пользователя" required data-i18n="[placeholder]authUsername">
+        <input type="password" id="registerPassword" placeholder="Пароль" required data-i18n="[placeholder]authPassword">
+        <button onclick="nextToStep2()" data-i18n="nextStep">Далее →</button>
+        <button onclick="showAuth()" data-i18n="backToLogin">← Назад</button>
+        <p id="registerStep1Message"></p>
+      </div>
+    </div>
 
-    <!-- Основной скрипт -->
-    <script src="script.js?v=1.0.6"></script>
+    <!-- Шаг 2: Регистрация — email -->
+    <div id="registerStep2Section" class="auth-section" style="display: none;">
+      <div class="auth-form">
+        <h2 data-i18n="registerStep2Title">📧 Шаг 2: Укажите email</h2>
+        <input type="email" id="registerEmail" placeholder="Email" required data-i18n="[placeholder]resetEmail">
+        <button onclick="completeRegistration()" data-i18n="completeRegistration">✅ Завершить регистрацию</button>
+        <button onclick="showRegisterStep1()" data-i18n="backToStep1">← Назад</button>
+        <p id="registerStep2Message"></p>
+      </div>
+    </div>
+
+    <!-- Форма восстановления пароля -->
+    <div id="forgotPasswordSection" class="auth-section" style="display: none;">
+      <div class="auth-form">
+        <h2 data-i18n="resetPassword">🔑 Восстановление пароля</h2>
+        <input type="email" id="resetEmail" placeholder="Email" required data-i18n="[placeholder]resetEmail">
+        <button onclick="sendResetLink()" data-i18n="resetSendLink">Отправить ссылку</button>
+        <button onclick="showAuth()">Назад</button>
+        <p id="resetMessage"></p>
+      </div>
+    </div>
+
+    <!-- Основной интерфейс -->
+    <div id="appSection" class="app-section" style="display: none;">
+      <header>
+        <h1 data-i18n="title">🚀 ProdBoost</h1>
+        <button onclick="logout()" data-i18n="logout" class="logout-btn">Выйти</button>
+      </header>
+
+      <!-- Меню навигации -->
+      <nav class="nav-menu">
+        <button onclick="app.showSection('tasks')" class="active" data-i18n="tasks">📋 Задачи</button>
+        <button onclick="app.showSection('stats')" data-i18n="stats">📊 Статистика</button>
+        <button onclick="app.showSection('settings')" data-i18n="settings">⚙️ Настройки</button>
+      </nav>
+
+      <!-- Секция задач -->
+      <div id="tasksSection" class="section active">
+        <div class="controls">
+          <input type="text" id="searchInput" placeholder="Поиск задач..." oninput="app.searchTasks()" data-i18n="[placeholder]taskFormSearch">
+          <select id="statusFilter" onchange="app.filterTasks()">
+            <option value="" data-i18n="taskStatusAll">Все статусы</option>
+            <option value="Создана" data-i18n="taskStatusCreated">Создана</option>
+            <option value="В работе" data-i18n="taskStatusInProgress">В работе</option>
+            <option value="Завершена" data-i18n="taskStatusCompleted">Завершена</option>
+          </select>
+        </div>
+        <div class="task-form">
+          <input type="text" id="taskTitle" placeholder="Название задачи" required data-i18n="[placeholder]taskFormTitle">
+          <textarea id="taskDescription" placeholder="Описание (опционально)" data-i18n="[placeholder]taskFormDescription"></textarea>
+          <input type="date" id="taskDueDate" data-i18n="[placeholder]taskFormDueDate">
+          <button onclick="app.addTask()" data-i18n="taskFormButton">Добавить задачу</button>
+        </div>
+        <div id="tasksContainer" class="tasks-container">
+          <h2 data-i18n="tasksHeader">Ваши задачи</h2>
+          <div id="tasksList"></div>
+        </div>
+      </div>
+
+      <!-- Секция статистики -->
+      <div id="statsSection" class="section">
+        <h2 data-i18n="stats">📊 Статистика</h2>
+        <div id="statsContent" class="stats-container">
+          <!-- Загружается динамически -->
+        </div>
+      </div>
+
+      <!-- Секция настроек -->
+      <div id="settingsSection" class="section">
+        <h2 data-i18n="settings">⚙️ Настройки</h2>
+
+        <!-- Telegram -->
+        <div class="settings-group">
+          <h3 data-i18n="telegramTitle">📲 Telegram</h3>
+          <p data-i18n="telegramInstruction">Привяжите Telegram для получения уведомлений:</p>
+          <input type="text" id="telegramCommand" readonly placeholder="Команда появится после входа">
+          <button onclick="app.copyTelegramCommand()" data-i18n="telegramCopy">📋 Скопировать</button>
+          <p id="telegramStatus"></p>
+        </div>
+
+        <!-- Тема -->
+        <div class="settings-group">
+          <h3 data-i18n="themeTitle">🎨 Тема интерфейса</h3>
+          <div class="theme-buttons">
+            <button onclick="app.setTheme('light')" class="theme-btn light">Светлая</button>
+            <button onclick="app.setTheme('dark')" class="theme-btn dark">Тёмная</button>
+            <button onclick="app.setTheme('blue')" class="theme-btn blue">Синяя</button>
+          </div>
+        </div>
+
+        <!-- Уведомления -->
+        <div class="settings-group">
+          <h3 data-i18n="notificationsTitle">🔔 Desktop-уведомления</h3>
+          <div class="notification-toggle">
+            <label class="switch">
+              <input type="checkbox" id="desktopNotifications" onchange="app.toggleDesktopNotifications()">
+              <span class="slider round"></span>
+            </label>
+            <span id="notificationStatus">Отключены</span>
+          </div>
+        </div>
+
+        <!-- Язык -->
+        <div class="settings-group">
+          <h3 data-i18n="languageTitle">🌐 Язык интерфейса</h3>
+          <select id="languageSelect" onchange="app.changeLanguage()">
+            <option value="ru">Русский</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+  <script>
+    // Глобальные функции для HTML onclick
+    function login() { if (window.app) app.login(); }
+    function showRegisterStep1() { if (window.app) app.showRegisterStep1(); }
+    function nextToStep2() { if (window.app) app.nextToStep2(); }
+    function completeRegistration() { if (window.app) app.completeRegistration(); }
+    function showForgotPassword() { if (window.app) app.showForgotPassword(); }
+    function sendResetLink() { if (window.app) app.sendResetLink(); }
+    function logout() { if (window.app) app.logout(); }
+    function showAuth() { if (window.app) app.showAuth(); }
+  </script>
 </body>
 </html>
