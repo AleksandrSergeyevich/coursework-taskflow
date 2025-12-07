@@ -1,4 +1,4 @@
-name: CI Pipeline for TaskFlow
+name: ProdBoost CI Pipeline
 
 on:
   push:
@@ -7,51 +7,98 @@ on:
     branches: [ main ]
 
 jobs:
-  test-and-deploy:
+  integration-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
 
-    # УДАЛЯЕМ блок "Build and test backend" — он нам не нужен!
-
-    - name: Build frontend
+    - name: Create test .env file
       run: |
-        echo "📦 Building frontend image..."
-        cd frontend
-        docker build -t taskflow-frontend .
-        echo "✅ Frontend image built successfully"
+        echo "SECRET_KEY=test_secret_key" > .env
+        echo "DATABASE_URL=postgresql://test_user:test_pass@localhost:5432/test_db" >> .env
+        echo "TELEGRAM_BOT_TOKEN=test_telegram_token" >> .env
+        echo "GITHUB_TOKEN=test_github_token" >> .env
+        echo "SMTP_USERNAME=test@example.com" >> .env
+        echo "SMTP_PASSWORD=test_password" >> .env
 
-    - name: Run full system with Docker Compose
+    - name: Update docker-compose.yml for CI
       run: |
-        echo "🐳 Starting full system with Docker Compose..."
+        sed -i 's/db/postgres/g' docker-compose.yml
+        sed -i 's/taskflow_user/test_user/g' docker-compose.yml
+        sed -i 's/taskflow_pass/test_pass/g' docker-compose.yml
+        sed -i 's/taskflow_db/test_db/g' docker-compose.yml
+        sed -i '/version:/d' docker-compose.yml
+
+    - name: Build and start services
+      run: |
+        docker compose build
         docker compose up -d
 
-        echo "⏳ Waiting 60 seconds for all services to initialize..."
-        sleep 60  # Даём больше времени — GitHub Actions медленнее
+    - name: Wait for services to be ready
+      run: |
+        echo "⏳ Waiting for backend to be ready..."
+        for i in {1..30}; do
+          if curl -f http://localhost:5000/health; then
+            echo "✅ Backend is ready!"
+            break
+          fi
+          sleep 2
+        done
+        
+        echo "⏳ Waiting for frontend to be ready..."
+        for i in {1..30}; do
+          if curl -f http://localhost:80; then
+            echo "✅ Frontend is ready!"
+            break
+          fi
+          sleep 2
+        done
 
-        echo "✅ Checking backend health (/health)..."
+    - name: Run health checks
+      run: |
+        echo "✅ Checking backend health..."
         if curl -f http://localhost:5000/health; then
-          echo "💚 Backend is responding"
+          echo "💚 Backend health check passed"
         else
-          echo "❌ Backend is NOT responding"
+          echo "❌ Backend health check failed"
           docker compose logs backend
           exit 1
         fi
-
+        
         echo "✅ Checking frontend availability..."
-        if curl -f http://localhost:8080; then
+        if curl -f http://localhost; then
           echo "💚 Frontend is responding"
         else
           echo "❌ Frontend is NOT responding"
           docker compose logs frontend
           exit 1
         fi
-
+        
         echo "✅ FULL SYSTEM IS RUNNING SUCCESSFULLY!"
+
+    - name: Stop containers
+      if: always()
+      run: |
         echo "🛑 Stopping all containers..."
         docker compose down
