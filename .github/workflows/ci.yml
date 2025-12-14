@@ -9,6 +9,7 @@ on:
 jobs:
   integration-tests:
     runs-on: ubuntu-latest
+    
     services:
       postgres:
         image: postgres:15
@@ -33,53 +34,48 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Install dependencies
+    - name: Install Python dependencies
       run: |
-        cd backend
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r backend/requirements.txt
 
-    - name: Create test .env file
+    - name: Create test environment file
       run: |
-        cd backend
-        echo "SECRET_KEY=test_secret_key" > .env
-        echo "DATABASE_URL=postgresql://test_user:test_pass@localhost:5432/test_db" >> .env
-        echo "TELEGRAM_BOT_TOKEN=test_bot_token" >> .env
-        echo "GITHUB_TOKEN=test_github_token" >> .env
-        echo "SMTP_USERNAME=test@example.com" >> .env
-        echo "SMTP_PASSWORD=test_password" >> .env
+        echo "SECRET_KEY=test_secret_key" > backend/.env
+        echo "DATABASE_URL=postgresql://test_user:test_pass@localhost:5432/test_db" >> backend/.env
+        echo "TELEGRAM_BOT_TOKEN=test_bot_token" >> backend/.env
+        echo "GITHUB_TOKEN=test_github_token" >> backend/.env
+        echo "SMTP_USERNAME=test@example.com" >> backend/.env
+        echo "SMTP_PASSWORD=test_password" >> backend/.env
 
     - name: Wait for PostgreSQL
       run: |
-        cd backend
-        python - <<EOF
-import time
-import psycopg2
-import os
-
-max_retries = 10
-retry_delay = 2
-
-for i in range(max_retries):
-    try:
-        conn = psycopg2.connect(
-            host='localhost',
-            port=5432,
-            user='test_user',
-            password='test_pass',
-            dbname='test_db'
-        )
-        conn.close()
-        print("✅ PostgreSQL is ready!")
-        exit(0)
-    except Exception as e:
-        print(f"⏳ Waiting for PostgreSQL... ({i+1}/{max_retries})")
-        print(f"Error: {e}")
-        time.sleep(retry_delay)
-
-print("❌ PostgreSQL is not available after multiple retries")
-exit(1)
-EOF
+        import time
+        import psycopg2
+        
+        max_retries = 10
+        retry_delay = 2
+        
+        for i in range(max_retries):
+            try:
+                conn = psycopg2.connect(
+                    host='localhost',
+                    port=5432,
+                    user='test_user',
+                    password='test_pass',
+                    dbname='test_db'
+                )
+                conn.close()
+                print("✅ PostgreSQL is ready!")
+                exit(0)
+            except Exception as e:
+                print(f"⏳ Waiting for PostgreSQL... ({i+1}/{max_retries})")
+                print(f"Error: {e}")
+                time.sleep(retry_delay)
+        
+        print("❌ PostgreSQL is not available after multiple retries")
+        exit(1)
+      shell: python
 
     - name: Run database migrations
       working-directory: backend
@@ -89,28 +85,104 @@ EOF
         python -c "from app import db; db.create_all()"
         echo "✅ Database tables created"
 
+    - name: Run application tests
+      working-directory: backend
+      env:
+        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
+        SECRET_KEY: test_secret_key
+      run: |
+        python -c "import pytest; exit(pytest.main(['-v']))"
+        echo "✅ Tests completed successfully"
+
     - name: Run health check
       working-directory: backend
       env:
         DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
       run: |
-        python -c "import requests; response = requests.get('http://localhost:5000/health'); print(f'Status code: {response.status_code}'); print(f'Response: {response.text}')"
-      
-    - name: Run tests
-      working-directory: backend
-      env:
-        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
-        SECRET_KEY: test_secret_key
-        TELEGRAM_BOT_TOKEN: test_bot_token
-        GITHUB_TOKEN: test_github_token
-      run: |
-        pytest --cov=. --cov-report=xml
-        echo "✅ Tests completed successfully"
+        python - <<EOF
+        import requests
+        import time
+        
+        # Запускаем приложение в фоновом режиме
+        import subprocess
+        import sys
+        
+        process = subprocess.Popen(
+            [sys.executable, "app.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=dict(os.environ, FLASK_ENV='development', FLASK_APP='app.py')
+        )
+        
+        # Ждем, пока приложение запустится
+        time.sleep(5)
+        
+        try:
+            response = requests.get('http://localhost:5000/health', timeout=10)
+            print(f"Status code: {response.status_code}")
+            print(f"Response: {response.json()}")
+            assert response.status_code == 200
+            assert response.json() == {"status": "OK"}
+            print("✅ Health check passed")
+        except Exception as e:
+            print(f"❌ Health check failed: {e}")
+            sys.exit(1)
+        finally:
+            process.terminate()
+            process.wait()
+        EOF
+      shell: python
 
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./backend/coverage.xml
-        flags: unittests
-        name: codecov-umbrella
+    - name: Build Docker images
+      run: |
+        docker compose build
+        echo "✅ Docker images built successfully"
+
+    - name: Run Docker containers
+      run: |
+        docker compose up -d
+        echo "✅ Docker containers started successfully"
+
+    - name: Verify services are running
+      run: |
+        echo "✅ Checking backend availability..."
+        if curl -f http://localhost:5000/health; then
+          echo "💚 Backend is responding"
+        else
+          echo "❌ Backend is NOT responding"
+          docker compose logs backend
+          exit 1
+        fi
+        
+        echo "✅ Checking frontend availability..."
+        if curl -f http://localhost:80; then
+          echo "💚 Frontend is responding"
+        else
+          echo "❌ Frontend is NOT responding"
+          docker compose logs frontend
+          exit 1
+        fi
+        
+        echo "✅ FULL SYSTEM IS RUNNING SUCCESSFULLY!"
+
+    - name: Stop containers
       if: always()
+      run: |
+        echo "🛑 Stopping all containers..."
+        docker compose down
+
+    - name: Upload coverage report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report
+        path: backend/htmlcov/
+
+    - name: Send status notification
+      if: always()
+      run: |
+        if [ ${{ job.status }} == 'success' ]; then
+          echo "🎉 CI pipeline completed successfully!"
+        else
+          echo "🚨 CI pipeline failed!"
+        fi
