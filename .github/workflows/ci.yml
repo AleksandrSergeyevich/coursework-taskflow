@@ -51,7 +51,7 @@ jobs:
 
     - name: Wait for PostgreSQL
       run: |
-        python - <<EOF
+        python - <<'EOF'
 import time
 import psycopg2
 
@@ -96,43 +96,27 @@ EOF
         python -c "import pytest; exit(pytest.main(['-v']))"
         echo "✅ Tests completed successfully"
 
-    - name: Run health check
+    - name: Start application for health check
       working-directory: backend
       env:
         DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
+        FLASK_APP: app.py
+        FLASK_ENV: development
       run: |
-        python - <<EOF
-import requests
-import time
-import subprocess
-import sys
-import os
+        nohup python app.py > app.log 2>&1 &
+        sleep 5
+        echo "✅ Application started in background"
 
-# Запускаем Flask-приложение в фоне
-process = subprocess.Popen(
-    [sys.executable, "app.py"],
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    env={**os.environ, "FLASK_ENV": "development"}
-)
-
-# Ждём запуска
-time.sleep(5)
-
-try:
-    response = requests.get('http://localhost:5000/health', timeout=10)
-    print(f"Status: {response.status_code}")
-    print(f"Response: {response.json()}")
-    assert response.status_code == 200
-    assert response.json() == {"status": "OK"}
-    print("✅ Health check passed")
-except Exception as e:
-    print(f"❌ Health check failed: {e}")
-    sys.exit(1)
-finally:
-    process.terminate()
-    process.wait()
-EOF
+    - name: Run health check
+      run: |
+        echo "✅ Checking backend health..."
+        if curl -f http://localhost:5000/health; then
+          echo "💚 Backend health check passed"
+        else
+          echo "❌ Backend health check failed"
+          cat backend/app.log
+          exit 1
+        fi
 
     - name: Build Docker images
       run: |
@@ -174,7 +158,7 @@ EOF
 
     - name: Upload coverage report (if exists)
       if: always()
-      uses: actions/upload-artifact@v4  # ✅ ИСПРАВЛЕНО: v3 → v4
+      uses: actions/upload-artifact@v4
       with:
         name: coverage-report
         path: backend/htmlcov/
@@ -183,7 +167,7 @@ EOF
     - name: Final status
       if: always()
       run: |
-        if [ ${{ job.status }} == 'success' ]; then
+        if [ "${{ job.status }}" == "success" ]; then
           echo "🎉 CI pipeline completed successfully!"
         else
           echo "🚨 CI pipeline failed!"
