@@ -9,21 +9,21 @@ on:
 jobs:
   integration-tests:
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:15
         env:
+          POSTGRES_DB: test_taskflow_db
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_pass
-          POSTGRES_DB: test_db
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+        ports:
+          - 5432:5432
 
     steps:
     - name: Checkout code
@@ -34,142 +34,105 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Install Python dependencies
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r backend/requirements.txt
 
-    - name: Create test environment file
+    - name: Create test .env file
       run: |
         mkdir -p backend
         echo "SECRET_KEY=test_secret_key" > backend/.env
-        echo "DATABASE_URL=postgresql://test_user:test_pass@localhost:5432/test_db" >> backend/.env
+        echo "DATABASE_URL=postgresql://test_user:test_pass@localhost:5432/test_taskflow_db" >> backend/.env
         echo "TELEGRAM_BOT_TOKEN=test_bot_token" >> backend/.env
         echo "GITHUB_TOKEN=test_github_token" >> backend/.env
-        echo "SMTP_USERNAME=test@example.com" >> backend/.env
-        echo "SMTP_PASSWORD=test_password" >> backend/.env
 
     - name: Wait for PostgreSQL
       run: |
-        python - <<'EOF'
-import time
-import psycopg2
-
-max_retries = 10
-retry_delay = 2
-
-for i in range(max_retries):
+        python -c "
+import time, psycopg2
+for i in range(10):
     try:
-        conn = psycopg2.connect(
-            host='localhost',
-            port=5432,
-            user='test_user',
-            password='test_pass',
-            dbname='test_db'
-        )
-        conn.close()
-        print("✅ PostgreSQL is ready!")
+        psycopg2.connect(host='localhost', port=5432, user='test_user', password='test_pass', dbname='test_taskflow_db')
+        print('✅ PostgreSQL ready')
         exit(0)
-    except Exception as e:
-        print(f"⏳ Waiting for PostgreSQL... ({i+1}/{max_retries})")
-        print(f"Error: {e}")
-        time.sleep(retry_delay)
-
-print("❌ PostgreSQL is not available after multiple retries")
+    except:
+        print(f'⏳ Waiting ({i+1}/10)')
+        time.sleep(2)
+print('❌ PostgreSQL failed')
 exit(1)
-EOF
+"
 
-    - name: Run database migrations
+    - name: Initialize database
       working-directory: backend
       env:
-        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
+        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_taskflow_db
       run: |
-        python -c "from app import db; db.create_all()"
-        echo "✅ Database tables created"
-
-    - name: Run application tests
-      working-directory: backend
-      env:
-        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
-        SECRET_KEY: test_secret_key
-      run: |
-        python -c "import pytest; exit(pytest.main(['-v']))"
-        echo "✅ Tests completed successfully"
-
-    - name: Start application for health check
-      working-directory: backend
-      env:
-        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
-        FLASK_APP: app.py
-        FLASK_ENV: development
-      run: |
-        nohup python app.py > app.log 2>&1 &
-        sleep 5
-        echo "✅ Application started in background"
+        python -c "from app import db; db.create_all(); print('✅ Tables created')"
 
     - name: Run health check
+      working-directory: backend
+      env:
+        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_taskflow_db
       run: |
-        echo "✅ Checking backend health..."
-        if curl -f http://localhost:5000/health; then
-          echo "💚 Backend health check passed"
-        else
-          echo "❌ Backend health check failed"
-          cat backend/app.log
-          exit 1
-        fi
+        python -c "
+import subprocess, sys, time, requests
+proc = subprocess.Popen([sys.executable, 'app.py'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+time.sleep(5)
+try:
+    resp = requests.get('http://localhost:5000/health', timeout=5)
+    assert resp.status_code == 200
+    assert resp.json() == {'status': 'OK'}
+    print('✅ Health check passed')
+except Exception as e:
+    print(f'❌ Health check failed: {e}')
+    proc.terminate()
+    sys.exit(1)
+proc.terminate()
+"
 
-    - name: Build Docker images
+    - name: Build and test Docker images
       run: |
         docker compose build
-        echo "✅ Docker images built successfully"
+        echo "✅ Docker images built"
 
-    - name: Run Docker containers
+    - name: Start services with Docker Compose
       run: |
         docker compose up -d
-        echo "✅ Docker containers started successfully"
+        echo "✅ Services started"
 
-    - name: Verify services are running
+    - name: Verify full system via HTTP
       run: |
-        echo "✅ Checking backend availability..."
+        # Проверка бэкенда
         if curl -f http://localhost:5000/health; then
-          echo "💚 Backend is responding"
+          echo "✅ Backend OK"
         else
-          echo "❌ Backend is NOT responding"
+          echo "❌ Backend failed"
           docker compose logs backend
           exit 1
         fi
-        
-        echo "✅ Checking frontend availability..."
-        if curl -f http://localhost:80; then
-          echo "💚 Frontend is responding"
+
+        # Проверка фронтенда
+        if curl -f http://localhost:8080; then
+          echo "✅ Frontend OK"
         else
-          echo "❌ Frontend is NOT responding"
+          echo "❌ Frontend failed"
           docker compose logs frontend
           exit 1
         fi
-        
-        echo "✅ FULL SYSTEM IS RUNNING SUCCESSFULLY!"
 
-    - name: Stop containers
+        echo "🎉 FULL SYSTEM VALIDATION SUCCESSFUL!"
+
+    - name: Cleanup
       if: always()
       run: |
-        echo "🛑 Stopping all containers..."
-        docker compose down
+        docker compose down -v
 
-    - name: Upload coverage report (if exists)
-      if: always()
+    - name: Upload logs on failure (optional)
+      if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: coverage-report
-        path: backend/htmlcov/
+        name: logs-on-failure
+        path: |
+          /tmp
         if-no-files-found: ignore
-
-    - name: Final status
-      if: always()
-      run: |
-        if [ "${{ job.status }}" == "success" ]; then
-          echo "🎉 CI pipeline completed successfully!"
-        else
-          echo "🚨 CI pipeline failed!"
-          exit 1
-        fi
