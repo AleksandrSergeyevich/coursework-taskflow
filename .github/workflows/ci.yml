@@ -1,58 +1,31 @@
-name: ProdBoost CI — System Validation
+name: ProdBoost CI — Docker Build & Health Check
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+on: [push, pull_request]
 
 jobs:
-  system-check:
+  docker-validate:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Docker Compose
-      run: |
-        echo "Checking docker-compose.yml..."
-        docker compose config
+      - name: Validate docker-compose.yml
+        run: docker compose config
 
-    - name: Build services
-      run: docker compose build
+      - name: Build services
+        run: docker compose build
 
-    - name: Start services in background
-      run: |
-        docker compose up -d
-        echo "⏳ Waiting for services to start..."
-        sleep 10
+      - name: Start services
+        run: |
+          docker compose up -d
+          sleep 10
 
-    - name: Verify backend health
-      run: |
-        echo "🔍 Checking backend..."
-        if curl -f http://localhost:5000/health; then
-          echo "✅ Backend is healthy"
-        else
-          echo "❌ Backend failed"
-          docker compose logs backend
-          exit 1
-        fi
+      - name: Check backend health
+        run: curl -f http://localhost:5000/health
 
-    - name: Verify frontend availability
-      run: |
-        echo "🔍 Checking frontend..."
-        if curl -f http://localhost:8080; then
-          echo "✅ Frontend is serving content"
-        else
-          echo "❌ Frontend failed"
-          docker compose logs frontend
-          exit 1
-        fi
+      - name: Check frontend
+        run: curl -f http://localhost:8080
 
-    - name: Final validation
-      run: echo "🎉 ProdBoost system validation PASSED!"
-
-    - name: Cleanup
-      if: always()
-      run: docker compose down -v
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
