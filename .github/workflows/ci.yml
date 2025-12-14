@@ -61,11 +61,13 @@ for i in range(30):
             password='test_pass',
             dbname='test_db'
         )
-        print('✅ DB ready')
+        print('✅ PostgreSQL is ready')
         exit(0)
-    except:
+    except Exception as e:
+        print(f'⏳ Waiting ({i+1}/30): {e}')
         time.sleep(1)
-print('❌ DB failed')
+
+print('❌ PostgreSQL failed to start')
 exit(1)
 EOF
 
