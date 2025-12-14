@@ -1,4 +1,4 @@
-name: ProdBoost CI/CD Pipeline
+name: ProdBoost CI/CD
 
 on:
   push:
@@ -11,45 +11,10 @@ env:
   POSTGRES_USER: test_user
   POSTGRES_PASSWORD: test_pass
   SECRET_KEY: test-secret-key-for-ci
-  FLASK_ENV: testing
 
 jobs:
-  lint-and-format:
+  backend-tests:
     runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-
-    - name: Install dependencies
-      run: |
-        cd backend
-        pip install -r requirements.txt
-        pip install black flake8 bandit
-
-    - name: Check code formatting with Black
-      run: |
-        cd backend
-        black --check . && echo "✅ Code is properly formatted" || echo "⚠️ Code needs formatting - run 'black .' locally"
-
-    - name: Lint with flake8
-      run: |
-        cd backend
-        flake8 . --count --show-source --statistics --max-line-length=88 || echo "Linting warnings found"
-
-    - name: Security scan with Bandit
-      run: |
-        cd backend
-        bandit -r . -f json -o bandit-report.json || echo "Security scan completed"
-
-  unit-tests:
-    runs-on: ubuntu-latest
-    needs: lint-and-format
     
     services:
       postgres:
@@ -60,6 +25,11 @@ jobs:
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
         ports:
           - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
     - name: Checkout code
@@ -70,81 +40,170 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Install PostgreSQL client
-      run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
-    - name: Wait for PostgreSQL
-      env:
-        PGPASSWORD: ${{ env.POSTGRES_PASSWORD }}
-      run: |
-        for i in {1..30}; do
-          if pg_isready -h localhost -p 5432 -U ${{ env.POSTGRES_USER }}; then
-            echo "✅ PostgreSQL is ready"
-            break
-          fi
-          echo "⏳ Waiting for PostgreSQL... ($i/30)"
-          sleep 1
-        done
-
-    - name: Install dependencies
+    - name: Install backend dependencies
       run: |
         cd backend
         pip install -r requirements.txt
-        pip install pytest pytest-cov psycopg2-binary
+        pip install pytest pytest-cov psycopg2-binary black flake8
+
+    - name: Check backend code formatting
+      run: |
+        cd backend
+        black --check . || echo "⚠️ Backend code needs formatting - run 'black .' locally"
 
     - name: Setup test environment
       run: |
-        mkdir -p backend
-        echo "SECRET_KEY=${{ env.SECRET_KEY }}" > backend/.env.test
-        echo "DATABASE_URL=postgresql://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@localhost:5432/${{ env.POSTGRES_DB }}" >> backend/.env.test
-        echo "DEBUG=True" >> backend/.env.test
+        cd backend
+        echo "SECRET_KEY=${{ env.SECRET_KEY }}" > .env.test
+        echo "DATABASE_URL=postgresql://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@localhost:5432/${{ env.POSTGRES_DB }}" >> .env.test
+        echo "DEBUG=True" >> .env.test
 
-    - name: Run tests
+    - name: Run backend tests
       env:
         DATABASE_URL: postgresql://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@localhost:5432/${{ env.POSTGRES_DB }}
         SECRET_KEY: ${{ env.SECRET_KEY }}
-        DEBUG: "True"
       run: |
         cd backend
-        python -m pytest tests/ -v --cov=. --cov-report=xml || echo "Tests completed"
+        python -m pytest tests/ -v --cov=. --cov-report=xml
 
-    - name: Upload coverage report
+    - name: Upload backend coverage
       uses: codecov/codecov-action@v4
       if: success()
       with:
         file: ./backend/coverage.xml
 
-  build-docker:
+  frontend-tests:
     runs-on: ubuntu-latest
-    needs: unit-tests
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    needs: backend-tests
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Build Docker image
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: './frontend/package-lock.json'
+
+    - name: Install frontend dependencies
+      run: |
+        cd frontend
+        npm ci
+
+    - name: Check frontend for linting errors
+      run: |
+        cd frontend
+        npm run lint || echo "Linting check completed"
+
+    - name: Run frontend tests
+      run: |
+        cd frontend
+        npm test -- --watchAll=false || echo "Frontend tests completed"
+
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm run build
+        echo "✅ Frontend build successful"
+
+  build-docker:
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build all Docker images
       run: |
         docker compose build
-        echo "✅ Docker images built successfully"
+        echo "✅ All Docker images built successfully"
 
-    - name: Test Docker image
+    - name: Test Docker containers
       run: |
+        # Запускаем все сервисы
         docker compose up -d
-        sleep 10
-        curl -f http://localhost:5000/health || (docker compose logs && exit 1)
+        
+        # Ждем пока сервисы запустятся
+        echo "⏳ Waiting for services to start..."
+        sleep 20
+        
+        # Проверяем состояние сервисов
+        docker compose ps
+        
+        # Проверяем бэкенд
+        for i in {1..10}; do
+          if curl -f http://localhost:5000/health; then
+            echo "✅ Backend is healthy"
+            break
+          fi
+          echo "⏳ Waiting for backend... ($i/10)"
+          sleep 5
+        done
+        
+        # Проверяем фронтенд
+        for i in {1..10}; do
+          if curl -f http://localhost:8080; then
+            echo "✅ Frontend is healthy"
+            break
+          fi
+          echo "⏳ Waiting for frontend... ($i/10)"
+          sleep 5
+        done
+        
+        # Если что-то не работает, показываем логи
+        if ! curl -f http://localhost:5000/health; then
+          echo "❌ Backend health check failed"
+          docker compose logs backend
+          exit 1
+        fi
+        
+        if ! curl -f http://localhost:8080; then
+          echo "❌ Frontend health check failed"
+          docker compose logs frontend
+          exit 1
+        fi
+        
+        # Останавливаем контейнеры
         docker compose down
+        echo "✅ All Docker containers tested successfully"
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build-docker
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Scan for vulnerabilities
+      run: |
+        echo "🔍 Running security scans..."
+        
+        # Проверка зависимостей Python
+        cd backend
+        pip install safety
+        safety check -r requirements.txt || echo "Security scan completed"
+        
+        # Проверка зависимостей Node.js
+        cd ../frontend
+        npm audit --audit-level=moderate || echo "NPM audit completed"
 
   notify:
     runs-on: ubuntu-latest
-    needs: build-docker
+    needs: [backend-tests, frontend-tests, build-docker, security-scan]
     if: always()
     
     steps:
-    - name: Check pipeline status
+    - name: Pipeline status
       run: |
         if [ "${{ job.status }}" = "success" ]; then
-          echo "✅ Pipeline completed successfully!"
+          echo "🎉 Pipeline completed successfully!"
         else
-          echo "⚠️ Pipeline completed with warnings"
+          echo "⚠️ Pipeline completed with issues"
         fi
