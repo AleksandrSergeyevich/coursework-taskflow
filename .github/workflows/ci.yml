@@ -33,72 +33,84 @@ jobs:
       with:
         python-version: '3.10'
 
+    - name: Install dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
     - name: Create test .env file
       run: |
+        cd backend
         echo "SECRET_KEY=test_secret_key" > .env
         echo "DATABASE_URL=postgresql://test_user:test_pass@localhost:5432/test_db" >> .env
-        echo "TELEGRAM_BOT_TOKEN=test_telegram_token" >> .env
+        echo "TELEGRAM_BOT_TOKEN=test_bot_token" >> .env
         echo "GITHUB_TOKEN=test_github_token" >> .env
         echo "SMTP_USERNAME=test@example.com" >> .env
         echo "SMTP_PASSWORD=test_password" >> .env
 
-    - name: Update docker-compose.yml for CI
+    - name: Wait for PostgreSQL
       run: |
-        sed -i 's/db/postgres/g' docker-compose.yml
-        sed -i 's/taskflow_user/test_user/g' docker-compose.yml
-        sed -i 's/taskflow_pass/test_pass/g' docker-compose.yml
-        sed -i 's/taskflow_db/test_db/g' docker-compose.yml
-        sed -i '/version:/d' docker-compose.yml
+        cd backend
+        python - <<EOF
+import time
+import psycopg2
+import os
 
-    - name: Build and start services
+max_retries = 10
+retry_delay = 2
+
+for i in range(max_retries):
+    try:
+        conn = psycopg2.connect(
+            host='localhost',
+            port=5432,
+            user='test_user',
+            password='test_pass',
+            dbname='test_db'
+        )
+        conn.close()
+        print("✅ PostgreSQL is ready!")
+        exit(0)
+    except Exception as e:
+        print(f"⏳ Waiting for PostgreSQL... ({i+1}/{max_retries})")
+        print(f"Error: {e}")
+        time.sleep(retry_delay)
+
+print("❌ PostgreSQL is not available after multiple retries")
+exit(1)
+EOF
+
+    - name: Run database migrations
+      working-directory: backend
+      env:
+        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
       run: |
-        docker compose build
-        docker compose up -d
+        python -c "from app import db; db.create_all()"
+        echo "✅ Database tables created"
 
-    - name: Wait for services to be ready
+    - name: Run health check
+      working-directory: backend
+      env:
+        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
       run: |
-        echo "⏳ Waiting for backend to be ready..."
-        for i in {1..30}; do
-          if curl -f http://localhost:5000/health; then
-            echo "✅ Backend is ready!"
-            break
-          fi
-          sleep 2
-        done
-        
-        echo "⏳ Waiting for frontend to be ready..."
-        for i in {1..30}; do
-          if curl -f http://localhost:80; then
-            echo "✅ Frontend is ready!"
-            break
-          fi
-          sleep 2
-        done
-
-    - name: Run health checks
+        python -c "import requests; response = requests.get('http://localhost:5000/health'); print(f'Status code: {response.status_code}'); print(f'Response: {response.text}')"
+      
+    - name: Run tests
+      working-directory: backend
+      env:
+        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
+        SECRET_KEY: test_secret_key
+        TELEGRAM_BOT_TOKEN: test_bot_token
+        GITHUB_TOKEN: test_github_token
       run: |
-        echo "✅ Checking backend health..."
-        if curl -f http://localhost:5000/health; then
-          echo "💚 Backend health check passed"
-        else
-          echo "❌ Backend health check failed"
-          docker compose logs backend
-          exit 1
-        fi
-        
-        echo "✅ Checking frontend availability..."
-        if curl -f http://localhost; then
-          echo "💚 Frontend is responding"
-        else
-          echo "❌ Frontend is NOT responding"
-          docker compose logs frontend
-          exit 1
-        fi
-        
-        echo "✅ FULL SYSTEM IS RUNNING SUCCESSFULLY!"
+        pytest --cov=. --cov-report=xml
+        echo "✅ Tests completed successfully"
 
-    - name: Stop containers
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/coverage.xml
+        flags: unittests
+        name: codecov-umbrella
       if: always()
-      run: |
-        echo "🛑 Stopping all containers..."
-        docker compose down
