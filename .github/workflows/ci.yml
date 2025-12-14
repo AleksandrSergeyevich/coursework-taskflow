@@ -1,13 +1,58 @@
-name: ProdBoost — Docker Build Only
+name: ProdBoost CI — System Validation
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  docker-build:
+  system-check:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Build Docker images
-        run: docker compose build
-      - name: Report success
-        run: echo "✅ Docker images built successfully"
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Compose
+      run: |
+        echo "Checking docker-compose.yml..."
+        docker compose config
+
+    - name: Build services
+      run: docker compose build
+
+    - name: Start services in background
+      run: |
+        docker compose up -d
+        echo "⏳ Waiting for services to start..."
+        sleep 10
+
+    - name: Verify backend health
+      run: |
+        echo "🔍 Checking backend..."
+        if curl -f http://localhost:5000/health; then
+          echo "✅ Backend is healthy"
+        else
+          echo "❌ Backend failed"
+          docker compose logs backend
+          exit 1
+        fi
+
+    - name: Verify frontend availability
+      run: |
+        echo "🔍 Checking frontend..."
+        if curl -f http://localhost:8080; then
+          echo "✅ Frontend is serving content"
+        else
+          echo "❌ Frontend failed"
+          docker compose logs frontend
+          exit 1
+        fi
+
+    - name: Final validation
+      run: echo "🎉 ProdBoost system validation PASSED!"
+
+    - name: Cleanup
+      if: always()
+      run: docker compose down -v
