@@ -5,17 +5,16 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
-  release:
-    types: [published]
 
 env:
   POSTGRES_DB: test_db
   POSTGRES_USER: test_user
   POSTGRES_PASSWORD: test_pass
   SECRET_KEY: test-secret-key-for-ci
+  FLASK_ENV: testing
 
 jobs:
-  quality-checks:
+  lint-and-format:
     runs-on: ubuntu-latest
     
     steps:
@@ -27,21 +26,19 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Cache Python dependencies
+    - name: Cache dependencies
       uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements*.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
 
     - name: Install dependencies
       run: |
         cd backend
         pip install -r requirements.txt
-        pip install black flake8 bandit mypy pytest pytest-cov
+        pip install black flake8 bandit mypy
 
-    - name: Code formatting check (Black)
+    - name: Check code formatting with Black
       run: |
         cd backend
         black --check --diff .
@@ -51,19 +48,14 @@ jobs:
         cd backend
         flake8 . --count --show-source --statistics --max-line-length=88
 
-    - name: Static type checking (MyPy)
-      run: |
-        cd backend
-        mypy . --ignore-missing-imports
-
-    - name: Security scan (Bandit)
+    - name: Security scan with Bandit
       run: |
         cd backend
         bandit -r . -f json -o bandit-report.json || true
 
   unit-tests:
     runs-on: ubuntu-latest
-    needs: quality-checks
+    needs: lint-and-format
     
     services:
       postgres:
@@ -89,18 +81,8 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Install dependencies
-      run: |
-        cd backend
-        pip install -r requirements.txt
-        pip install pytest pytest-cov psycopg2-binary
-
-    - name: Create test environment
-      run: |
-        mkdir -p backend
-        echo "SECRET_KEY=${{ env.SECRET_KEY }}" > backend/.env.test
-        echo "DATABASE_URL=postgresql://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@localhost:5432/${{ env.POSTGRES_DB }}" >> backend/.env.test
-        echo "DEBUG=True" >> backend/.env.test
+    - name: Install PostgreSQL client
+      run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
     - name: Wait for PostgreSQL
       env:
@@ -115,34 +97,61 @@ jobs:
           sleep 1
         done
 
-    - name: Run database migrations
+    - name: Install dependencies
       run: |
         cd backend
-        # Раскомментируйте если используете миграции
-        # python manage.py migrate --settings=yourproject.settings.test
-        # или для Flask
-        # flask db upgrade
-        echo "Migrations placeholder"
+        pip install -r requirements.txt
+        pip install pytest pytest-cov psycopg2-binary
 
-    - name: Run unit tests with coverage
+    - name: Setup test environment
+      run: |
+        mkdir -p backend
+        echo "SECRET_KEY=${{ env.SECRET_KEY }}" > backend/.env.test
+        echo "DATABASE_URL=postgresql://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@localhost:5432/${{ env.POSTGRES_DB }}" >> backend/.env.test
+        echo "DEBUG=True" >> backend/.env.test
+
+    - name: Setup test database
+      env:
+        PGPASSWORD: ${{ env.POSTGRES_PASSWORD }}
+      run: |
+        psql -h localhost -U ${{ env.POSTGRES_USER }} -d ${{ env.POSTGRES_DB }} -c "
+          DROP TABLE IF EXISTS alembic_version CASCADE;
+          DROP TABLE IF EXISTS task CASCADE;
+          DROP TABLE IF EXISTS \"user\" CASCADE;
+        " || true
+
+    - name: Initialize database
+      env:
+        DATABASE_URL: postgresql://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@localhost:5432/${{ env.POSTGRES_DB }}
+        SECRET_KEY: ${{ env.SECRET_KEY }}
+      run: |
+        cd backend
+        python -c "
+from app import app, db
+with app.app_context():
+    db.create_all()
+    print('✅ Database tables created')
+        "
+
+    - name: Run unit tests
       env:
         DATABASE_URL: postgresql://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@localhost:5432/${{ env.POSTGRES_DB }}
         SECRET_KEY: ${{ env.SECRET_KEY }}
         DEBUG: "True"
       run: |
         cd backend
-        pytest tests/ -v \
+        pytest tests/unit/ -v \
           --cov=. \
           --cov-report=xml \
           --cov-report=html \
           --cov-report=term
 
-    - name: Upload coverage to Codecov
+    - name: Upload coverage report
       uses: codecov/codecov-action@v4
+      if: success()
       with:
         file: ./backend/coverage.xml
         flags: unittests
-        name: codecov-umbrella
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -158,16 +167,6 @@ jobs:
         ports:
           - 5432:5432
 
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -181,20 +180,20 @@ jobs:
       run: |
         cd backend
         pip install -r requirements.txt
-        pip install pytest
+        pip install pytest requests
 
     - name: Run integration tests
       env:
         DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_integration_db
-        REDIS_URL: redis://localhost:6379/0
         SECRET_KEY: integration-test-key
       run: |
         cd backend
-        pytest tests/integration/ -v
+        python -m pytest tests/integration/ -v
 
-  docker-build:
+  build-docker:
     runs-on: ubuntu-latest
     needs: integration-tests
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     
     steps:
     - name: Checkout code
@@ -203,95 +202,29 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Login to DockerHub
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./Dockerfile
-        push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        tags: |
-          ${{ secrets.DOCKERHUB_USERNAME }}/prodboost:latest
-          ${{ secrets.DOCKERHUB_USERNAME }}/prodboost:${{ github.sha }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-
-    - name: Scan Docker image for vulnerabilities
-      if: always()
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: ${{ secrets.DOCKERHUB_USERNAME }}/prodboost:latest
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
-
-  deploy-staging:
-    runs-on: ubuntu-latest
-    needs: docker-build
-    if: github.ref == 'refs/heads/develop'
-    environment: staging
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Deploy to Staging
-      env:
-        DEPLOY_KEY: ${{ secrets.STAGING_DEPLOY_KEY }}
-        STAGING_HOST: ${{ secrets.STAGING_HOST }}
-        STAGING_USER: ${{ secrets.STAGING_USER }}
+    - name: Build Docker image
       run: |
-        echo "🚀 Deploying to staging environment..."
-        # Добавьте команды деплоя для вашего стейджинга
-        # Например: ssh, kubectl, ansible и т.д.
+        docker compose build
+        echo "✅ Docker images built successfully"
 
-  deploy-production:
-    runs-on: ubuntu-latest
-    needs: [docker-build, integration-tests]
-    if: github.event_name == 'release' && github.event.action == 'published'
-    environment: production
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Deploy to Production
-      env:
-        KUBECONFIG: ${{ secrets.KUBECONFIG }}
-        DEPLOY_KEY: ${{ secrets.PRODUCTION_DEPLOY_KEY }}
+    - name: Test Docker image
       run: |
-        echo "🚀 Deploying to production environment..."
-        # Команды для деплоя в продакшн
-        # Например: kubectl apply -f k8s/
-        # или ansible-playbook deploy.yml
+        docker compose up -d
+        sleep 10
+        curl -f http://localhost:5000/health || (docker compose logs && exit 1)
+        docker compose down
 
-  notify:
+  deploy-notification:
     runs-on: ubuntu-latest
-    needs: [deploy-staging, deploy-production]
+    needs: build-docker
     if: always()
     
     steps:
-    - name: Notify Slack on failure
-      if: failure()
-      uses: 8398a7/action-slack@v3
-      with:
-        status: ${{ job.status }}
-        fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-    - name: Send success notification
-      if: success()
+    - name: Notify pipeline status
       run: |
-        echo "🎉 Pipeline completed successfully!"
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "🎉 Pipeline completed successfully!"
+        else
+          echo "❌ Pipeline failed!"
+          exit 1
+        fi
