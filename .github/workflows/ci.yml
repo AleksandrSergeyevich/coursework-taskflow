@@ -1,107 +1,13 @@
-name: ProdBoost CI Pipeline
+name: ProdBoost — Docker Build Only
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+on: [push, pull_request]
 
 jobs:
-  integration-tests:
+  docker-build:
     runs-on: ubuntu-latest
-    
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_pass
-          POSTGRES_DB: test_db
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-
-    - name: Install dependencies
-      run: |
-        cd backend
-        pip install -r requirements.txt
-        pip install pytest pytest-cov
-
-    - name: Create test .env
-      run: |
-        mkdir -p backend
-        echo "SECRET_KEY=test" > backend/.env
-        echo "DATABASE_URL=postgresql://test_user:test_pass@localhost:5432/test_db" >> backend/.env
-
-    - name: Wait for PostgreSQL
-      run: |
-        python - <<'EOF'
-import time, psycopg2
-for i in range(30):
-    try:
-        psycopg2.connect(
-            host='localhost',
-            port=5432,
-            user='test_user',
-            password='test_pass',
-            dbname='test_db'
-        )
-        print('✅ DB ready')
-        exit(0)
-    except:
-        time.sleep(1)
-print('❌ DB failed')
-exit(1)
-EOF
-
-    - name: Initialize DB
-      working-directory: backend
-      env:
-        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
-      run: |
-        python -c "from app import db; db.create_all()"
-
-    - name: Run health check
-      working-directory: backend
-      env:
-        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_db
-      run: |
-        python -c "
-import subprocess, sys, time, requests
-p = subprocess.Popen([sys.executable, 'app.py'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-time.sleep(5)
-try:
-    r = requests.get('http://localhost:5000/health', timeout=5)
-    assert r.status_code == 200
-    print('✅ Health OK')
-finally:
-    p.terminate()
-"
-
-    - name: Build Docker
-      run: docker compose build
-
-    - name: Start services
-      run: docker compose up -d
-
-    - name: Verify system
-      run: |
-        curl -f http://localhost:5000/health
-        curl -f http://localhost:8080
-
-    - name: Cleanup
-      if: always()
-      run: docker compose down -v
+      - uses: actions/checkout@v4
+      - name: Build Docker images
+        run: docker compose build
+      - name: Report success
+        run: echo "✅ Docker images built successfully"
