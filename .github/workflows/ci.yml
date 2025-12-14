@@ -1,31 +1,137 @@
-name: ProdBoost CI — Docker Build & Health Check
+name: ProdBoost CI Pipeline
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  docker-validate:
+  build-and-test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: test_taskflow_db
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Validate docker-compose.yml
-        run: docker compose config
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
 
-      - name: Build services
-        run: docker compose build
+    - name: Install Python dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
-      - name: Start services
-        run: |
-          docker compose up -d
-          sleep 10
+    - name: Create test .env file
+      run: |
+        mkdir -p backend
+        echo "SECRET_KEY=test_secret_key" > backend/.env
+        echo "DATABASE_URL=postgresql://test_user:test_pass@localhost:5432/test_taskflow_db" >> backend/.env
+        echo "TELEGRAM_BOT_TOKEN=test_bot_token" >> backend/.env
+        echo "GITHUB_TOKEN=test_github_token" >> backend/.env
 
-      - name: Check backend health
-        run: curl -f http://localhost:5000/health
+    - name: Wait for PostgreSQL
+      run: |
+        python - <<'EOF'
+import time
+import psycopg2
 
-      - name: Check frontend
-        run: curl -f http://localhost:8080
+for i in range(30):
+    try:
+        psycopg2.connect(
+            host='localhost',
+            port=5432,
+            user='test_user',
+            password='test_pass',
+            dbname='test_taskflow_db'
+        )
+        print('✅ PostgreSQL ready')
+        exit(0)
+    except Exception as e:
+        print(f'⏳ Waiting ({i+1}/30): {e}')
+        time.sleep(1)
 
-      - name: Cleanup
-        if: always()
-        run: docker compose down -v
+print('❌ PostgreSQL failed to start')
+exit(1)
+EOF
+
+    - name: Initialize database
+      working-directory: backend
+      env:
+        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_taskflow_db
+      run: |
+        python -c "from app import db; db.create_all(); print('✅ DB tables created')"
+
+    - name: Run health check
+      working-directory: backend
+      env:
+        DATABASE_URL: postgresql://test_user:test_pass@localhost:5432/test_taskflow_db
+        SECRET_KEY: test_secret_key
+      run: |
+        python -c "
+import subprocess, sys, time, requests
+proc = subprocess.Popen([sys.executable, 'app.py'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+time.sleep(5)
+try:
+    resp = requests.get('http://localhost:5000/health', timeout=10)
+    assert resp.status_code == 200
+    assert resp.json() == {'status': 'OK'}
+    print('✅ Health check passed')
+except Exception as e:
+    print(f'❌ Health check failed: {e}')
+    proc.terminate()
+    sys.exit(1)
+proc.terminate()
+"
+
+    - name: Build Docker images
+      run: docker compose build
+
+    - name: Start services
+      run: |
+        docker compose up -d
+        sleep 10
+
+    - name: Verify system availability
+      run: |
+        # Проверка бэкенда
+        if curl -f http://localhost:5000/health; then
+          echo "✅ Backend OK"
+        else
+          echo "❌ Backend failed"
+          docker compose logs backend
+          exit 1
+        fi
+
+        # Проверка фронтенда
+        if curl -f http://localhost:8080; then
+          echo "✅ Frontend OK"
+        else
+          echo "❌ Frontend failed"
+          docker compose logs frontend
+          exit 1
+        fi
+
+        echo "🎉 FULL SYSTEM VALIDATION SUCCESSFUL!"
+
+    - name: Cleanup
+      if: always()
+      run: docker compose down -v
